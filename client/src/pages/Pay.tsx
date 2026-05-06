@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/catalog";
 import { CASHTAG } from "@/lib/config";
-import { Copy, ExternalLink, Check, Hash, DollarSign, Send } from "lucide-react";
+import { Copy, ExternalLink, Check, Hash, DollarSign, Send, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -17,7 +17,7 @@ export default function Pay() {
   const [, navigate] = useLocation();
   const [copied, setCopied] = useState<"tag" | "code" | "amount" | null>(null);
 
-  // Once the order is placed we have a server-issued PC-NNNN code; show it
+  // Once the order is placed we have a server-issued PG-NNNN code; show it
   // immediately so the customer can paste it into their Cash App note.
   const { data: order } = useQuery<Order>({
     queryKey: ["/api/orders", lastOrderId],
@@ -26,7 +26,7 @@ export default function Pay() {
   });
 
   const orderCode =
-    order?.orderCode || (lastOrderId != null ? `PC-${String(lastOrderId).padStart(4, "0")}` : "");
+    order?.orderCode || (lastOrderId != null ? `PG-${String(lastOrderId).padStart(4, "0")}` : "");
   const amount = (totalCents / 100).toFixed(2);
   const noteText = orderCode ? `PuffGo order ${orderCode}` : "PuffGo order";
   // Cash App's hosted-link "note" param doesn't always pre-fill the receiver
@@ -82,6 +82,29 @@ export default function Pay() {
         </a>
       </div>
 
+      <div className="rounded-3xl border-2 border-amber-400/70 bg-amber-400/15 p-4 mb-4 text-center shadow-[0_0_40px_rgba(251,191,36,0.16)]">
+        <div className="flex items-center justify-center gap-2 text-amber-200 font-bold text-sm uppercase tracking-[0.16em] mb-2">
+          <AlertTriangle className="size-4" />
+          Required Cash App note
+        </div>
+        <button
+          type="button"
+          onClick={() => orderCode && copy(orderCode, "code", "Order code")}
+          className="w-full rounded-2xl border border-amber-300/50 bg-background/70 px-3 py-4 active:scale-[0.99] transition"
+          data-testid="button-copy-large-order-code"
+        >
+          <div className="text-[11px] text-muted-foreground mb-1">
+            Copy this code and paste it in the Cash App note
+          </div>
+          <div className="font-mono text-4xl font-black tracking-widest text-amber-200">
+            {orderCode || "PG-..."}
+          </div>
+          <div className="text-xs text-amber-100/80 mt-2">
+            No code in the note = payment may be delayed
+          </div>
+        </button>
+      </div>
+
       {/* Three copyable rows — cashtag, amount, order code */}
       <div className="rounded-2xl border border-card-border bg-card p-2 mb-4 divide-y divide-border/60">
         <CopyRow
@@ -133,7 +156,7 @@ export default function Pay() {
           <Step n={3}>
             In the Cash App <span className="font-semibold">note / "for"</span> field, paste your
             order code:{" "}
-            <span className="font-mono font-semibold text-primary">{orderCode || "PC-..."}</span>.
+            <span className="font-mono font-semibold text-primary">{orderCode || "PG-..."}</span>.
             This is how we match your payment to your order.
           </Step>
           <Step n={4}>

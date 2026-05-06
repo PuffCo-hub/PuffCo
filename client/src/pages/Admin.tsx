@@ -620,8 +620,21 @@ export default function Admin() {
                     !o.acknowledged && ["placed", "pay_pending"].includes(o.status);
                   const flagged = o.status === "attention_needed";
                   const payStatus = (o as any).paymentStatus || "pending_payment";
-                  const orderCode = (o as any).orderCode || `PC-${String(o.id).padStart(4, "0")}`;
+                  const orderCode = (o as any).orderCode || `PG-${String(o.id).padStart(4, "0")}`;
                   const isUnpaid = payStatus === "pending_payment";
+                  let orderedItems: OrderItem[] = [];
+                  try {
+                    orderedItems = JSON.parse(o.items || "[]");
+                  } catch {
+                    orderedItems = [];
+                  }
+                  const fullAddress = [
+                    o.street,
+                    o.unit ? `Unit ${o.unit}` : "",
+                    `${o.city}, ${o.state} ${o.zip}`,
+                  ]
+                    .filter(Boolean)
+                    .join(", ");
                   return (
                     <div
                       key={o.id}
@@ -638,17 +651,27 @@ export default function Admin() {
                     >
                       <div className="flex justify-between items-start gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span
-                              className="font-mono text-base font-bold text-primary tracking-wide"
+                          <div className="rounded-2xl border border-primary/35 bg-primary/10 p-3 mb-3">
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-primary/90 font-bold">
+                              Order code
+                            </div>
+                            <div
+                              className="font-mono text-3xl font-black text-primary tracking-widest leading-none mt-1"
                               data-testid={`text-order-code-${o.id}`}
                             >
                               {orderCode}
-                            </span>
-                            <PaymentBadge status={payStatus} />
+                            </div>
+                            {isUnpaid ? (
+                              <div className="mt-2 text-[12px] text-amber-200">
+                                Match this against the Cash App note before marking paid.
+                              </div>
+                            ) : null}
                           </div>
-                          <div className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                            #{o.id} · {o.status}
+                          <div className="flex items-center gap-2 flex-wrap mb-2">
+                            <PaymentBadge status={payStatus} />
+                            <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                              #{o.id} · {o.status}
+                            </span>
                             {needsAck ? (
                               <span className="text-amber-500 font-semibold">· Needs ack</span>
                             ) : null}
@@ -661,9 +684,52 @@ export default function Admin() {
                               </span>
                             ) : null}
                           </div>
-                          <div className="text-sm font-medium truncate">
-                            {o.street}, {o.city} {o.state}
+
+                          <div className="rounded-2xl border border-card-border bg-background/55 p-3 mb-3">
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">
+                              Deliver to
+                            </div>
+                            <div className="text-base font-bold leading-snug" data-testid={`text-order-address-${o.id}`}>
+                              {fullAddress}
+                            </div>
+                            {o.notes ? (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Notes: {o.notes}
+                              </div>
+                            ) : null}
                           </div>
+
+                          <div className="rounded-2xl border border-card-border bg-background/55 p-3 mb-3">
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">
+                              Items to deliver
+                            </div>
+                            {orderedItems.length === 0 ? (
+                              <div className="text-sm text-muted-foreground">No item details saved.</div>
+                            ) : (
+                              <div className="space-y-2">
+                                {orderedItems.map((item, idx) => (
+                                  <div
+                                    key={`${item.id}-${idx}`}
+                                    className="flex items-start justify-between gap-3 rounded-xl bg-card/70 border border-border/50 px-3 py-2"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-sm leading-snug">
+                                        {item.qty}× {item.brand ? `${item.brand} ` : ""}
+                                        {item.name}
+                                      </div>
+                                      <div className="text-[11px] text-muted-foreground font-mono">
+                                        Product ID: {item.id}
+                                      </div>
+                                    </div>
+                                    <div className="text-sm font-bold tabular-nums shrink-0">
+                                      {formatPrice(item.estPriceCents * item.qty)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
                           <div className="text-xs text-muted-foreground">
                             {new Date(o.createdAt).toLocaleTimeString()} ·{" "}
                             <span className="font-semibold text-foreground">{formatPrice(o.totalCents)}</span>

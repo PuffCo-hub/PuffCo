@@ -8,7 +8,7 @@ import { z } from "zod";
 export const orders = sqliteTable("orders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   // Short, human-friendly order code customers reference in Cash App notes.
-  // Format: PC-NNNN (zero-padded counter) or PC-YYYY-XXXX. Must be unique.
+  // Format: PG-NNNN (zero-padded counter). Must be unique.
   orderCode: text("order_code").notNull().default(""),
   createdAt: integer("created_at").notNull(),
   // Items as JSON: [{id, name, brand, qty, basePrice, estPrice}]
