@@ -15,6 +15,12 @@ export const orders = sqliteTable("orders", {
   items: text("items").notNull(),
   subtotal: integer("subtotal_cents").notNull(),
   tipCents: integer("tip_cents").notNull(),
+  // Minimal customer contact stored with the order so the operator and the
+  // driver can identify and reach the customer. No persistent customer
+  // profiles — fields live only on the order row.
+  customerFirstName: text("customer_first_name").notNull().default(""),
+  customerLastInitial: text("customer_last_initial").notNull().default(""),
+  customerPhone: text("customer_phone").notNull().default(""),
   // Service fee or revenue split share applied by the configured pricing mode.
   // Stored on the order so historical orders keep their original total even if
   // the global pricing settings later change. Never exposes supplier cost.

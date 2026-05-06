@@ -11,6 +11,9 @@ export type CartLine = {
 };
 
 export type Address = {
+  firstName: string;
+  lastInitial: string;
+  phone: string;
   street: string;
   unit?: string;
   city: string;

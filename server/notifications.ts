@@ -1,22 +1,16 @@
-// Notification provider stub.
+// Notification delivery.
 //
-// Real SMS and push delivery requires a configured provider. This module
-// exposes a single `notify` function that the rest of the server calls; if
-// no provider is configured, it logs the event and writes to the audit log
-// instead of failing the request.
+// SMS delivery uses Twilio's REST API directly via Node fetch with HTTP basic
+// auth — no SDK dependency. If the required env vars are missing, SMS calls
+// are skipped (logged and audited) without breaking the order flow.
 //
-// To wire a real provider, set environment variables and update the branch
-// inside `notify` accordingly. The placeholders below show the contract:
+// Required env vars for SMS:
+//   TWILIO_ACCOUNT_SID
+//   TWILIO_AUTH_TOKEN
+//   TWILIO_FROM_PHONE     (E.164, e.g. +15551234567)
 //
-//   PUFFCO_SMS_PROVIDER       — "twilio" | "vonage" | "" (disabled)
-//   PUFFCO_SMS_FROM           — sender id / phone number
-//   PUFFCO_TWILIO_ACCOUNT_SID
-//   PUFFCO_TWILIO_AUTH_TOKEN
-//   PUFFCO_PUSH_WEBHOOK       — generic webhook URL (Slack/Discord/etc.)
-//
-// The admin UI also stores an operator phone and webhook URL in the
-// settings table; values from settings take precedence over env vars at
-// runtime, but env vars provide credentials the UI never holds.
+// Optional:
+//   PUFFCO_PUSH_WEBHOOK   generic webhook URL (Slack/Discord/etc.)
 
 import type { NotificationSettings } from "@shared/schema";
 
@@ -31,30 +25,87 @@ export type NotifyEvent = {
   subjectId?: string | null;
 };
 
+export type SmsResult = {
+  to: string;
+  ok: boolean;
+  error?: string;
+  skipped?: boolean;
+  reason?: string;
+};
+
+function smsConfig() {
+  return {
+    sid: (process.env.TWILIO_ACCOUNT_SID || "").trim(),
+    token: (process.env.TWILIO_AUTH_TOKEN || "").trim(),
+    from: (process.env.TWILIO_FROM_PHONE || "").trim(),
+  };
+}
+
+export function isSmsConfigured() {
+  const c = smsConfig();
+  return Boolean(c.sid && c.token && c.from);
+}
+
+// Send a single SMS via Twilio. Never throws — returns a structured result so
+// callers can decide whether to log/audit the outcome.
+export async function sendSms(to: string, body: string): Promise<SmsResult> {
+  const target = (to || "").trim();
+  if (!target) {
+    return { to: target, ok: false, skipped: true, reason: "missing recipient" };
+  }
+  const cfg = smsConfig();
+  if (!cfg.sid || !cfg.token || !cfg.from) {
+    return {
+      to: target,
+      ok: false,
+      skipped: true,
+      reason: "twilio env vars missing",
+    };
+  }
+  try {
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(cfg.sid)}/Messages.json`;
+    const auth = Buffer.from(`${cfg.sid}:${cfg.token}`).toString("base64");
+    const form = new URLSearchParams();
+    form.set("To", target);
+    form.set("From", cfg.from);
+    form.set("Body", body);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return { to: target, ok: false, error: `twilio ${res.status}: ${text.slice(0, 200)}` };
+    }
+    return { to: target, ok: true };
+  } catch (err: any) {
+    return { to: target, ok: false, error: String(err?.message || err) };
+  }
+}
+
+// Parse DRIVER_ALERT_PHONES (comma-separated) and fall back to the operator
+// phone configured in admin settings. Returns the deduped list of recipients.
+export function resolveDriverRecipients(operatorPhone?: string): string[] {
+  const raw = process.env.DRIVER_ALERT_PHONES || "";
+  const fromEnv = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (fromEnv.length > 0) return Array.from(new Set(fromEnv));
+  const fallback = (operatorPhone || "").trim();
+  return fallback ? [fallback] : [];
+}
+
 export async function notify(
   ev: NotifyEvent,
   settings: NotificationSettings,
 ): Promise<{ delivered: NotifyChannel[]; errors: string[] }> {
   const delivered: NotifyChannel[] = [];
   const errors: string[] = [];
-
-  // SMS branch — only fires if a provider is configured via env vars AND a
-  // recipient is set in settings. We never throw on missing credentials;
-  // the call simply records that SMS was skipped.
-  const smsProvider = process.env.PUFFCO_SMS_PROVIDER || "";
-  const smsTo = settings.operatorPhone?.trim() || "";
-  if (smsProvider && smsTo) {
-    try {
-      // Placeholder: real implementation would call the provider SDK.
-      // e.g. twilioClient.messages.create({ to: smsTo, body: ev.body, from: process.env.PUFFCO_SMS_FROM })
-      console.log(
-        `[notify] (placeholder) SMS via ${smsProvider} -> ${smsTo}: ${ev.title}`,
-      );
-      delivered.push("sms");
-    } catch (err: any) {
-      errors.push(`sms: ${err?.message || err}`);
-    }
-  }
 
   // Webhook branch — fires for any webhook URL configured in settings.
   const webhook = settings.webhookUrl?.trim() || process.env.PUFFCO_PUSH_WEBHOOK || "";

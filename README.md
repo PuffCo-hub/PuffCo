@@ -56,15 +56,29 @@ Required:
 - `PUFFCO_ADMIN_PIN`: change this from `PuffCo2026` to a private PIN.
 - `PUFFCO_DB_PATH`: database file path, usually `data/puffco.db`.
 
-Optional for SMS:
+Optional for SMS (Twilio):
 
-- `PUFFCO_SMS_PROVIDER`: `twilio` or `vonage`.
-- `PUFFCO_SMS_FROM`: sender phone number.
-- `PUFFCO_TWILIO_ACCOUNT_SID`: Twilio account ID.
-- `PUFFCO_TWILIO_AUTH_TOKEN`: Twilio auth token.
-- `PUFFCO_PUSH_WEBHOOK`: optional notification webhook.
+- `TWILIO_ACCOUNT_SID`: your Twilio account SID. Find it on the Twilio console home page.
+- `TWILIO_AUTH_TOKEN`: your Twilio auth token. Treat this like a password. Never paste it into the app or commit it to GitHub.
+- `TWILIO_FROM_PHONE`: the Twilio phone number that will send the texts. Use full E.164 format like `+15551234567`.
+- `DRIVER_ALERT_PHONES`: comma-separated list of driver/operator phone numbers in E.164 format that should receive a text every time a new order is placed. Example: `+15555550111,+15555550222`. If this is left blank, the app falls back to the operator phone saved in admin settings.
+- `AVERAGE_WAIT_MINUTES`: optional whole number used in the customer confirmation text. Defaults to `45` if not set.
+- `PUFFCO_PUSH_WEBHOOK`: optional generic webhook (Slack/Discord) that gets a JSON payload for each new order.
 
-If SMS is not set up yet, the app can still run. It just will not send real text messages.
+### Setting up SMS on Render (plain English)
+
+1. Open your Render dashboard and click your PuffGo service.
+2. Click the **Environment** tab on the left.
+3. Click **Add Environment Variable** and add each of the four Twilio-related variables one by one:
+   - Key: `TWILIO_ACCOUNT_SID`, Value: paste from your Twilio console.
+   - Key: `TWILIO_AUTH_TOKEN`, Value: paste from your Twilio console.
+   - Key: `TWILIO_FROM_PHONE`, Value: your Twilio number, e.g. `+15551234567`.
+   - Key: `DRIVER_ALERT_PHONES`, Value: comma-separated driver numbers, e.g. `+15555550111,+15555550222`.
+4. Optionally also add `AVERAGE_WAIT_MINUTES` (number only, no units).
+5. Click **Save Changes**. Render will redeploy automatically.
+6. Place a test order to confirm the drivers receive a text and the customer gets a confirmation text.
+
+If any of the Twilio variables are missing, the app keeps working normally — it simply skips sending real text messages and records that the SMS step was skipped in the audit log. No SMS secrets are ever stored in the database or in the admin UI.
 
 ## Local development
 

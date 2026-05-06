@@ -45,6 +45,9 @@ sqlite.exec(`
     tip_cents INTEGER NOT NULL,
     fee_cents INTEGER NOT NULL DEFAULT 0,
     total_cents INTEGER NOT NULL,
+    customer_first_name TEXT NOT NULL DEFAULT '',
+    customer_last_initial TEXT NOT NULL DEFAULT '',
+    customer_phone TEXT NOT NULL DEFAULT '',
     street TEXT NOT NULL,
     unit TEXT,
     city TEXT NOT NULL,
@@ -150,6 +153,11 @@ function tryAlter(sql: string) {
   "ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending_payment'",
   "ALTER TABLE orders ADD COLUMN paid_at INTEGER",
   "ALTER TABLE orders ADD COLUMN refunded_at INTEGER",
+  // Customer contact fields stored per-order. Default empty so existing rows
+  // migrate cleanly; new orders are validated to be non-empty at the API layer.
+  "ALTER TABLE orders ADD COLUMN customer_first_name TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE orders ADD COLUMN customer_last_initial TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAULT ''",
 ].forEach(tryAlter);
 
 // Backfill orderCode for any pre-existing rows (best effort — keeps customer

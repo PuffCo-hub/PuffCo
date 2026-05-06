@@ -14,9 +14,27 @@ import {
 } from "@shared/schema";
 import { computePricing } from "./pricing";
 import { findSubstitutes } from "./substitutions";
-import { notify } from "./notifications";
+import {
+  notify,
+  sendSms,
+  isSmsConfigured,
+  resolveDriverRecipients,
+} from "./notifications";
 import { startSweeper, runOnce } from "./sweeper";
 import { z } from "zod";
+
+// Phone number must allow common formatting (spaces, dashes, parentheses, dots,
+// leading +) but contain at least 7 digits.
+const PHONE_RE = /^[+\d\s().\-]+$/;
+function countDigits(value: string): number {
+  return (value.match(/\d/g) || []).length;
+}
+
+function defaultWaitMinutes(): number {
+  const raw = Number(process.env.AVERAGE_WAIT_MINUTES);
+  if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
+  return 45;
+}
 
 function slugify(input: string) {
   return input
@@ -114,6 +132,25 @@ export async function registerRoutes(
     if (!parsed.success)
       return res.status(400).json({ error: parsed.error.flatten() });
 
+    // Customer contact validation. The base insert schema is permissive for
+    // backwards compatibility with already-stored rows; new orders must
+    // supply a real first name, last initial, and phone with >= 7 digits.
+    const firstName = String(parsed.data.customerFirstName ?? "").trim();
+    const lastInitial = String(parsed.data.customerLastInitial ?? "").trim();
+    const phone = String(parsed.data.customerPhone ?? "").trim();
+    const fieldErrors: Record<string, string> = {};
+    if (firstName.length < 1) fieldErrors.customerFirstName = "First name required";
+    if (lastInitial.length < 1)
+      fieldErrors.customerLastInitial = "Last initial required";
+    if (!phone) {
+      fieldErrors.customerPhone = "Phone required";
+    } else if (!PHONE_RE.test(phone) || countDigits(phone) < 7) {
+      fieldErrors.customerPhone = "Enter a valid phone (at least 7 digits)";
+    }
+    if (Object.keys(fieldErrors).length > 0) {
+      return res.status(400).json({ error: { fieldErrors } });
+    }
+
     // Validate stock for every line and apply atomic decrement. If any line is
     // out of stock, return the offending IDs so the client can offer
     // substitutes before checkout.
@@ -156,24 +193,87 @@ export async function registerRoutes(
       locationId: order.locationId,
     });
 
-    // Best-effort notification — never blocks the response.
-    storage
+    // Best-effort notification (webhook + log) plus SMS fanout. Never blocks
+    // the response. SMS fanout is wrapped in its own try/catch and audited.
+    const notifSettings = (await storage
       .getSetting<NotificationSettings>("notifications")
-      .then((notif) =>
-        notify(
-          {
-            title: `New order ${order.orderCode || "#" + order.id}`,
-            body: `Total $${(order.totalCents / 100).toFixed(2)} — watch Cash App note for ${order.orderCode || "#" + order.id}.`,
-            tag: "order.new",
-            subjectId: String(order.id),
-          },
-          notif || DEFAULT_NOTIFICATIONS,
-        ),
-      )
-      .catch(() => {});
+      .catch(() => undefined)) || DEFAULT_NOTIFICATIONS;
+    notify(
+      {
+        title: `New order ${order.orderCode || "#" + order.id}`,
+        body: `Total $${(order.totalCents / 100).toFixed(2)} — watch Cash App note for ${order.orderCode || "#" + order.id}.`,
+        tag: "order.new",
+        subjectId: String(order.id),
+      },
+      notifSettings,
+    ).catch(() => {});
+
+    void dispatchOrderSms(order, items, notifSettings).catch((err) => {
+      console.warn("[sms] dispatch failed:", err?.message || err);
+    });
 
     res.json(order);
   });
+
+  async function dispatchOrderSms(
+    order: any,
+    items: OrderItem[],
+    notif: NotificationSettings,
+  ) {
+    if (!isSmsConfigured()) {
+      await storage.appendAudit("sms.skipped", String(order.id), {
+        reason: "twilio env vars missing",
+      });
+      return;
+    }
+
+    const customerName = `${order.customerFirstName} ${order.customerLastInitial}`.trim();
+    const orderCode = order.orderCode || `#${order.id}`;
+    const itemsLine = items
+      .map((it) => `${it.qty}x ${it.brand ? `${it.brand} ` : ""}${it.name}`)
+      .join("; ");
+    const fullAddress = [
+      order.street,
+      order.unit ? `Unit ${order.unit}` : "",
+      `${order.city}, ${order.state} ${order.zip}`,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    // Driver/operator alert — multi-recipient.
+    const recipients = resolveDriverRecipients(notif.operatorPhone);
+    const driverBody =
+      `New PuffGo order ${orderCode}\n` +
+      `Customer: ${customerName} (${order.customerPhone})\n` +
+      `Items: ${itemsLine}\n` +
+      `Deliver to: ${fullAddress}`;
+    for (const to of recipients) {
+      const result = await sendSms(to, driverBody);
+      await storage.appendAudit("sms.driver_alert", String(order.id), {
+        to,
+        ok: result.ok,
+        skipped: result.skipped ?? false,
+        error: result.error,
+        reason: result.reason,
+      });
+    }
+
+    // Customer confirmation.
+    const wait = defaultWaitMinutes();
+    const customerBody =
+      `Thanks ${order.customerFirstName} — PuffGo received your order ${orderCode}. ` +
+      `Typical wait is about ${wait} minutes. ` +
+      `We'll confirm once payment is matched. Reply if anything needs to change.`;
+    const confirmation = await sendSms(order.customerPhone, customerBody);
+    await storage.appendAudit("sms.customer_confirmation", String(order.id), {
+      to: order.customerPhone,
+      ok: confirmation.ok,
+      skipped: confirmation.skipped ?? false,
+      error: confirmation.error,
+      reason: confirmation.reason,
+      waitMinutes: wait,
+    });
+  }
 
   app.post("/api/orders/:id/status", async (req, res) => {
     const id = Number(req.params.id);

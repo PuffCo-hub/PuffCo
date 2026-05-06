@@ -685,6 +685,36 @@ export default function Admin() {
                             ) : null}
                           </div>
 
+                          {(((o as any).customerFirstName || "") +
+                            ((o as any).customerLastInitial || "") +
+                            ((o as any).customerPhone || "")) ? (
+                            <div className="rounded-2xl border border-card-border bg-background/55 p-3 mb-3">
+                              <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">
+                                Customer
+                              </div>
+                              <div
+                                className="text-base font-bold leading-snug"
+                                data-testid={`text-order-customer-${o.id}`}
+                              >
+                                {[
+                                  (o as any).customerFirstName,
+                                  (o as any).customerLastInitial,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ") || "(name not provided)"}
+                              </div>
+                              {(o as any).customerPhone ? (
+                                <a
+                                  href={`tel:${String((o as any).customerPhone).replace(/[^+\d]/g, "")}`}
+                                  className="inline-flex items-center mt-1 text-sm font-mono text-primary underline underline-offset-2"
+                                  data-testid={`link-order-phone-${o.id}`}
+                                >
+                                  {(o as any).customerPhone}
+                                </a>
+                              ) : null}
+                            </div>
+                          ) : null}
+
                           <div className="rounded-2xl border border-card-border bg-background/55 p-3 mb-3">
                             <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">
                               Deliver to
