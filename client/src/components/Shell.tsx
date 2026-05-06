@@ -96,7 +96,8 @@ export function Disclaimer() {
   return (
     <p className="text-[11px] leading-relaxed text-muted-foreground">
       21+ only. Valid government-issued ID required at handoff. Availability,
-      delivery, and payment are subject to local rules.
+      delivery, and payment are subject to local rules. PuffGo is currently
+      Pasco County only unless the operator accepts the longer trip.
     </p>
   );
 }

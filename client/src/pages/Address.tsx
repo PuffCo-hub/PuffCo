@@ -51,6 +51,12 @@ export default function Address() {
         profiles or addresses across orders.
       </p>
 
+      <div className="mb-5 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-xs leading-relaxed text-amber-100/90">
+        <span className="font-semibold text-amber-200">Delivery area notice:</span>{" "}
+        Pasco County orders are the normal service area. If this address is outside Pasco,
+        add a larger tip or wait for the operator to confirm before expecting dispatch.
+      </div>
+
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Field label="Street address" error={errors.street?.message}>
           <Input

@@ -186,6 +186,12 @@ export default function Pay() {
         matched to your order automatically.
       </div>
 
+      <div className="rounded-2xl border border-card-border bg-card p-3 mb-4 text-[12px] leading-snug text-muted-foreground">
+        <span className="font-semibold text-foreground">Delivery area: </span>
+        PuffGo is currently Pasco County only. Outside-Pasco deliveries may be declined unless
+        the added tip covers the longer drive.
+      </div>
+
       <p className="text-[11px] leading-relaxed text-muted-foreground mb-6">
         PuffGo does not process payment and does not store payment information. Cash App is a
         third-party service — using it is not a claim of compliance with any specific regulatory

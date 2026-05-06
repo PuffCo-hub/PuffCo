@@ -1,50 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PuffGo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PuffGo PG smoke icon">
   <defs>
-    <radialGradient id="bg" cx="50%" cy="32%" r="78%">
-      <stop offset="0%" stop-color="#18382f"/>
-      <stop offset="55%" stop-color="#07140f"/>
-      <stop offset="100%" stop-color="#020403"/>
+    <radialGradient id="bg" cx="50%" cy="45%" r="72%">
+      <stop offset="0%" stop-color="#2b241d"/>
+      <stop offset="65%" stop-color="#15120f"/>
+      <stop offset="100%" stop-color="#080706"/>
     </radialGradient>
-    <radialGradient id="halo" cx="50%" cy="44%" r="50%">
-      <stop offset="0%" stop-color="#8fffe2" stop-opacity="0.42"/>
-      <stop offset="62%" stop-color="#26d69f" stop-opacity="0.14"/>
-      <stop offset="100%" stop-color="#26d69f" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="cloud" x1="72" y1="140" x2="436" y2="386" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#f6fff9"/>
-      <stop offset="42%" stop-color="#bcffe4"/>
-      <stop offset="100%" stop-color="#4ee5ad"/>
+    <linearGradient id="smoke" x1="70" y1="170" x2="450" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fff1d4"/>
+      <stop offset="55%" stop-color="#d8cbb8"/>
+      <stop offset="100%" stop-color="#8f8375"/>
     </linearGradient>
-    <linearGradient id="letters" x1="128" y1="166" x2="385" y2="356" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="62%" stop-color="#d7fff0"/>
-      <stop offset="100%" stop-color="#85ffc9"/>
-    </linearGradient>
-    <filter id="softGlow" x="-35%" y="-35%" width="170%" height="170%">
-      <feGaussianBlur stdDeviation="12" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.12 0 0 0 0 1 0 0 0 0 0.65 0 0 0 0.8 0" result="greenBlur"/>
-      <feMerge>
-        <feMergeNode in="greenBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <filter id="letterGlow" x="-25%" y="-25%" width="150%" height="150%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <circle cx="256" cy="238" r="190" fill="url(#halo)"/>
-  <g filter="url(#softGlow)" opacity="0.98">
-    <path d="M116 322c-34 0-62-27-62-61 0-31 23-57 53-61 12-50 57-87 111-87 35 0 67 15 89 39 12-7 27-11 42-11 47 0 85 38 85 85 0 7-1 15-3 22 22 11 37 34 37 60 0 37-30 67-67 67H119c-1 0-2 0-3 0z" fill="url(#cloud)" opacity="0.92"/>
-    <path d="M122 337c-35 0-64-24-72-56 13 22 38 36 66 36h284c29 0 54-19 63-45 3 7 5 15 5 24 0 38-31 69-69 69H120c-31 0-58-19-69-46 17 12 42 18 71 18z" fill="#0ed48b" opacity="0.23"/>
+  <rect width="512" height="512" rx="108" fill="#080706"/>
+  <circle cx="256" cy="256" r="198" fill="url(#bg)"/>
+  <g opacity="0.88">
+    <path d="M74 304c0-33 30-60 67-60 13-41 63-70 121-70 55 0 102 25 118 61 36 2 64 28 64 60 0 34-33 62-74 62H145c-39 0-71-24-71-53z" fill="#8f8375"/>
+    <path d="M97 287c0-28 28-51 62-51 12-34 58-58 111-58 51 0 94 22 109 52 33 2 59 24 59 51 0 29-30 53-68 53H163c-36 0-66-20-66-47z" fill="#d8cbb8"/>
+    <path d="M136 280c0-23 24-41 54-41 10-27 47-46 89-46 41 0 75 18 87 43 27 1 48 20 48 42 0 24-24 43-55 43H193c-32 0-57-18-57-41z" fill="url(#smoke)"/>
   </g>
-  <g filter="url(#letterGlow)">
-    <text x="256" y="318" text-anchor="middle" font-family="Arial Black, Impact, system-ui, sans-serif" font-size="154" font-weight="900" letter-spacing="-10" fill="#052218" stroke="#ecfff7" stroke-width="14" paint-order="stroke fill">PG</text>
-    <text x="256" y="318" text-anchor="middle" font-family="Arial Black, Impact, system-ui, sans-serif" font-size="154" font-weight="900" letter-spacing="-10" fill="url(#letters)">PG</text>
+  <g fill="none" stroke="#b7aa9b" stroke-width="14" stroke-linecap="round" opacity="0.85">
+    <path d="M156 146c-26-35 34-46 13-82"/>
+    <path d="M255 130c-27-37 39-51 17-91"/>
+    <path d="M348 151c-24-32 32-42 13-75"/>
   </g>
-  <path d="M175 138c-21-28 31-35 13-70 38 26 8 54 34 80M303 128c-19-29 33-36 16-72 36 29 3 57 31 82" fill="none" stroke="#9effd7" stroke-width="14" stroke-linecap="round" opacity="0.55"/>
+  <text x="256" y="333" text-anchor="middle"
+        font-family="Arial Black, Arial, sans-serif"
+        font-size="164" font-weight="900" letter-spacing="-8"
+        fill="#fff1d4" stroke="#18130f" stroke-width="16" paint-order="stroke fill">PG</text>
 </svg>

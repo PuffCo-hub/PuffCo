@@ -185,16 +185,16 @@ export default function Menu() {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                Delivering to
+                Serving
               </p>
               <div className="mt-1 flex items-center gap-1.5 font-semibold text-base">
                 <MapPin className="size-4 text-primary" />
-                <span className="truncate">Current drop-off</span>
+                <span className="truncate">Pasco County</span>
                 <ChevronRight className="size-4 text-muted-foreground" />
               </div>
               <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <Clock className="size-3.5" />
-                <span>Fast local handoff · ID required at delivery</span>
+                <span>Outside Pasco requires a serious tip · ID required</span>
               </div>
             </div>
             <div className="rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary border border-primary/20">
@@ -209,6 +209,10 @@ export default function Menu() {
         <p className="mt-1 text-xs text-muted-foreground">
           Browse trending vapes, carts, glass, papers, and wraps.
         </p>
+        <div className="mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[12px] leading-snug text-amber-100/90">
+          <span className="font-semibold text-amber-200">Pasco County only for now.</span>{" "}
+          If you are outside Pasco, the order may be declined unless the tip covers the longer drive.
+        </div>
 
         {/* Quick category chip rail */}
         <div className="mt-3 flex gap-2 overflow-x-auto -mx-4 px-4 pb-1">
