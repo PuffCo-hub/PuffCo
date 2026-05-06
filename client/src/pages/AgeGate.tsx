@@ -2,32 +2,66 @@ import { useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { SmokeWordmark } from "@/components/SmokeWordmark";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Truck, Clock, Sparkles } from "lucide-react";
 
 export default function AgeGate() {
   const [, navigate] = useLocation();
   const { setAgeVerified } = useCart();
 
   return (
-    <div className="mobile-shell smoke-overlay relative flex min-h-[100dvh] flex-col items-center justify-center px-6 py-10 text-center">
+    <div className="mobile-shell relative flex min-h-[100dvh] flex-col px-6 py-8 text-center overflow-hidden">
+      {/* Smoke + ember visual layers — deeper, more cinematic than the previous overlay. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        {/* base radial wash */}
+        <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_-10%,hsl(24_90%_56%/0.18),transparent_55%),radial-gradient(120%_80%_at_50%_110%,hsl(270_50%_50%/0.18),transparent_60%)]" />
+        {/* drifting smoke blobs */}
+        <div className="absolute -top-32 -left-16 size-[420px] rounded-full bg-primary/10 blur-[120px]" />
+        <div className="absolute -bottom-32 -right-12 size-[380px] rounded-full bg-violet-500/15 blur-[120px]" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 size-[320px] rounded-full bg-fuchsia-500/10 blur-[140px]" />
+        {/* fine grain so it doesn't look like a CSS gradient demo */}
+        <div
+          className="absolute inset-0 opacity-[0.06] mix-blend-overlay"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+          }}
+        />
+      </div>
+
       <div className="flex-1 flex flex-col items-center justify-center w-full">
-        <div className="mb-6">
-          <SmokeWordmark size={68} />
+        <div className="mb-1 flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] uppercase tracking-[0.22em] text-primary font-semibold">
+          <Sparkles className="size-3" />
+          Stage One · prototype
         </div>
-        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
-          Smoke shop · QR delivery
-        </p>
-        <h1 className="text-xl font-semibold mb-3" data-testid="text-age-title">
-          Are you 21 or older?
+
+        <div className="mt-6 mb-3">
+          <SmokeWordmark size={84} />
+        </div>
+
+        <h1
+          className="text-[2.1rem] leading-[1.05] font-bold tracking-tight max-w-sm"
+          data-testid="text-age-title"
+        >
+          Smoke shop, delivered.
+          <br />
+          <span className="text-primary">Order in plain English.</span>
         </h1>
-        <p className="max-w-xs text-sm text-muted-foreground mb-8">
-          By continuing you confirm you are of legal age in your jurisdiction.
-          A valid government-issued ID is required at handoff.
+
+        <p className="mt-4 max-w-xs text-sm text-muted-foreground leading-relaxed">
+          Vapes, carts, glass, papers, wraps. Cash App at checkout — short order code keeps
+          payment matched. ID checked at the door.
         </p>
 
-        <div className="w-full space-y-3 max-w-xs">
+        {/* Trust strip */}
+        <div className="mt-6 grid grid-cols-3 gap-2 w-full max-w-xs">
+          <Trust icon={<Truck className="size-4" />} label="Local delivery" />
+          <Trust icon={<Clock className="size-4" />} label="Live tracking" />
+          <Trust icon={<ShieldCheck className="size-4" />} label="21+ ID at door" />
+        </div>
+
+        <div className="w-full space-y-3 max-w-xs mt-8">
           <Button
-            className="ember-button w-full h-12 text-base font-semibold"
+            className="ember-button w-full h-14 text-base font-semibold rounded-2xl"
             data-testid="button-age-yes"
             onClick={() => {
               setAgeVerified(true);
@@ -35,26 +69,34 @@ export default function AgeGate() {
             }}
           >
             <ShieldCheck className="size-4 mr-2" />
-            Yes, I'm 21+
+            I'm 21+ · Browse menu
           </Button>
-          <Button
-            variant="ghost"
-            className="w-full h-12 text-sm text-muted-foreground"
+          <button
+            type="button"
+            className="block w-full text-xs text-muted-foreground hover:text-foreground transition py-2"
             data-testid="button-age-no"
             onClick={() => {
               window.location.href = "https://www.google.com";
             }}
           >
-            No, take me away
-          </Button>
+            I'm under 21 — take me away
+          </button>
         </div>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-muted-foreground max-w-xs mt-8">
-        Prototype concept only. PuffCo does not store ID images, dates of
-        birth, payment data, or persistent customer profiles. This is not
-        legal or compliance advice.
+      <p className="text-[11px] leading-relaxed text-muted-foreground/80 max-w-xs mx-auto mt-8">
+        Prototype concept only. PuffCo does not store ID images, dates of birth, payment data,
+        or persistent customer profiles. This is not legal or compliance advice.
       </p>
+    </div>
+  );
+}
+
+function Trust({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div className="rounded-xl border border-card-border bg-card/60 backdrop-blur-sm px-2 py-3 flex flex-col items-center gap-1.5 text-[11px] text-foreground/85 leading-tight">
+      <span className="text-primary">{icon}</span>
+      <span className="text-center">{label}</span>
     </div>
   );
 }

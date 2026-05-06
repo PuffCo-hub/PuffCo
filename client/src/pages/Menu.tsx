@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { ProductImage } from "@/components/ProductImage";
 import { ProductDetailModal } from "@/components/ProductDetailModal";
+import { InstallBanner } from "@/components/InstallBanner";
 import { useQuery } from "@tanstack/react-query";
 
 function ProductCard({ p, onOpen }: { p: Product; onOpen: (p: Product) => void }) {
@@ -173,27 +174,79 @@ export default function Menu() {
 
   return (
     <Shell>
-      <div className="mb-4 rounded-3xl bg-card border border-card-border p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Delivering to
-            </p>
-            <div className="mt-1 flex items-center gap-1.5 font-semibold text-base">
-              <MapPin className="size-4 text-primary" />
-              <span className="truncate">Current drop-off</span>
-              <ChevronRight className="size-4 text-muted-foreground" />
+      {/* Premium hero — smoky backdrop, delivery context, and a quick category */}
+      {/* chip rail for instant filtering before the search/trending sections.   */}
+      <div className="relative -mx-4 px-4 pt-1 pb-4 mb-4 overflow-hidden">
+        <div
+          aria-hidden
+          className="absolute inset-0 -z-10 bg-[radial-gradient(110%_70%_at_50%_-20%,hsl(24_90%_56%/0.18),transparent_55%),radial-gradient(110%_70%_at_50%_120%,hsl(270_50%_50%/0.14),transparent_60%)]"
+        />
+        <div className="rounded-3xl border border-card-border bg-card/80 backdrop-blur-md p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                Delivering to
+              </p>
+              <div className="mt-1 flex items-center gap-1.5 font-semibold text-base">
+                <MapPin className="size-4 text-primary" />
+                <span className="truncate">Current drop-off</span>
+                <ChevronRight className="size-4 text-muted-foreground" />
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Clock className="size-3.5" />
+                <span>Prototype estimate · ID required at handoff</span>
+              </div>
             </div>
-            <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-              <Clock className="size-3.5" />
-              <span>Prototype estimate · ID required at handoff</span>
+            <div className="rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary border border-primary/20">
+              21+
             </div>
-          </div>
-          <div className="rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary border border-primary/20">
-            21+
           </div>
         </div>
+
+        <h2 className="mt-5 text-2xl font-bold tracking-tight leading-tight">
+          Order it like you'd <span className="text-primary">say it.</span>
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Vapes, carts, glass, papers, wraps — written the way you'd order in-store.
+        </p>
+
+        {/* Quick category chip rail */}
+        <div className="mt-3 flex gap-2 overflow-x-auto -mx-4 px-4 pb-1">
+          <button
+            onClick={() => {
+              setActiveCategory(null);
+              setActiveSubcategory(null);
+            }}
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition ${
+              !activeCategory
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-card-border bg-card/80 text-foreground hover-elevate"
+            }`}
+            data-testid="chip-category-all"
+          >
+            All
+          </button>
+          {CATEGORY_OPTIONS.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => {
+                setActiveCategory((cur) => (cur === c.id ? null : c.id));
+                setActiveSubcategory(null);
+              }}
+              className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition ${
+                activeCategory === c.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-card-border bg-card/80 text-foreground hover-elevate"
+              }`}
+              data-testid={`chip-quick-${c.id}`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      <InstallBanner />
 
       <div className="sticky top-[61px] z-20 -mx-4 px-4 pb-3 pt-1 bg-background/92 backdrop-blur-md border-b border-border/50 mb-4">
         <div className="relative">

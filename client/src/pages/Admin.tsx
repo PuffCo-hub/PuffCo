@@ -22,7 +22,9 @@ import { Label } from "@/components/ui/label";
 import {
   Package,
   MessageSquareDot,
-  TrendingUp,
+  Wallet,
+  Clock,
+  Truck,
   Plus,
   Pencil,
   Trash2,
@@ -237,6 +239,24 @@ export default function Admin() {
       return res.json();
     },
   });
+  const { data: revenue } = useQuery<{
+    paidCents: number;
+    pendingCents: number;
+    deliveredCents: number;
+    refundedCents: number;
+    paidCount: number;
+    pendingCount: number;
+    deliveredCount: number;
+    totalOrderCount: number;
+  }>({
+    queryKey: ["/api/admin/revenue"],
+    enabled: authed,
+    refetchInterval: authed ? 5000 : false,
+    queryFn: async () => {
+      const res = await adminRequest(pin, "GET", "/api/admin/revenue");
+      return res.json();
+    },
+  });
 
   // Audio + visual cue: when a new order id appears, fire the chime once.
   const lastSeenRef = useRef<number | null>(null);
@@ -316,6 +336,19 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue"] });
+    },
+  });
+
+  const updatePaymentStatus = useMutation({
+    mutationFn: async (args: { id: number; paymentStatus: string }) => {
+      await adminRequest(pin, "POST", `/api/orders/${args.id}/payment-status`, {
+        paymentStatus: args.paymentStatus,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue"] });
     },
   });
 
@@ -329,7 +362,6 @@ export default function Admin() {
     },
   });
 
-  const grossCents = orders.reduce((s, o) => s + o.totalCents, 0);
   const activeCount = products.filter((p) => p.active).length;
   const lowStock = products.filter(
     (p) => p.active && p.stockCount > 0 && p.stockCount <= p.lowStockThreshold,
@@ -439,9 +471,33 @@ export default function Admin() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        <KPI
+          icon={Wallet}
+          label="Paid"
+          value={formatPrice(revenue?.paidCents ?? 0)}
+          sub={`${revenue?.paidCount ?? 0} orders`}
+          tone="positive"
+          testid="kpi-paid"
+        />
+        <KPI
+          icon={Clock}
+          label="Pending"
+          value={formatPrice(revenue?.pendingCents ?? 0)}
+          sub={`${revenue?.pendingCount ?? 0} unpaid`}
+          tone="warning"
+          testid="kpi-pending"
+        />
+        <KPI
+          icon={Truck}
+          label="Delivered"
+          value={formatPrice(revenue?.deliveredCents ?? 0)}
+          sub={`${revenue?.deliveredCount ?? 0} fulfilled`}
+          testid="kpi-delivered"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-4">
         <KPI icon={Package} label="Products" value={String(activeCount)} testid="kpi-products" />
-        <KPI icon={TrendingUp} label="Gross" value={formatPrice(grossCents)} testid="kpi-gross" />
         <KPI icon={MessageSquareDot} label="Write-ins" value={String(requests.length)} testid="kpi-requests" />
       </div>
 
@@ -540,6 +596,9 @@ export default function Admin() {
                   const needsAck =
                     !o.acknowledged && ["placed", "pay_pending"].includes(o.status);
                   const flagged = o.status === "attention_needed";
+                  const payStatus = (o as any).paymentStatus || "pending_payment";
+                  const orderCode = (o as any).orderCode || `PC-${String(o.id).padStart(4, "0")}`;
+                  const isUnpaid = payStatus === "pending_payment";
                   return (
                     <div
                       key={o.id}
@@ -548,12 +607,23 @@ export default function Admin() {
                           ? "ring-1 ring-destructive/50"
                           : needsAck
                           ? "ring-1 ring-amber-500/50"
+                          : isUnpaid
+                          ? "ring-1 ring-amber-400/30"
                           : ""
                       }`}
                       data-testid={`admin-order-${o.id}`}
                     >
                       <div className="flex justify-between items-start gap-3">
                         <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span
+                              className="font-mono text-base font-bold text-primary tracking-wide"
+                              data-testid={`text-order-code-${o.id}`}
+                            >
+                              {orderCode}
+                            </span>
+                            <PaymentBadge status={payStatus} />
+                          </div>
                           <div className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 flex-wrap">
                             #{o.id} · {o.status}
                             {needsAck ? (
@@ -573,11 +643,16 @@ export default function Admin() {
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {new Date(o.createdAt).toLocaleTimeString()} ·{" "}
-                            {formatPrice(o.totalCents)}
+                            <span className="font-semibold text-foreground">{formatPrice(o.totalCents)}</span>
                             {o.feeCents > 0 ? (
                               <span className="opacity-70"> · fee {formatPrice(o.feeCents)}</span>
                             ) : null}
                           </div>
+                          {isUnpaid ? (
+                            <div className="mt-1.5 text-[11px] bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1 text-amber-200">
+                              Watch Cash App for note: <span className="font-mono font-bold">{orderCode}</span>
+                            </div>
+                          ) : null}
                         </div>
                         {authed ? (
                           <div className="flex flex-col gap-1 shrink-0">
@@ -589,6 +664,66 @@ export default function Admin() {
                                 data-testid={`button-ack-${o.id}`}
                               >
                                 Acknowledge
+                              </Button>
+                            ) : null}
+                            {payStatus === "pending_payment" ? (
+                              <Button
+                                size="sm"
+                                className="h-8 px-2 text-[11px] bg-emerald-600 hover:bg-emerald-500 text-white"
+                                onClick={() =>
+                                  updatePaymentStatus.mutate({ id: o.id, paymentStatus: "paid" })
+                                }
+                                data-testid={`button-mark-paid-${o.id}`}
+                              >
+                                Mark Paid
+                              </Button>
+                            ) : null}
+                            {payStatus === "paid" ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-2 text-[11px]"
+                                  onClick={() =>
+                                    updatePaymentStatus.mutate({
+                                      id: o.id,
+                                      paymentStatus: "refund_due",
+                                    })
+                                  }
+                                  data-testid={`button-mark-refund-due-${o.id}`}
+                                >
+                                  Refund due
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-2 text-[11px]"
+                                  onClick={() =>
+                                    updatePaymentStatus.mutate({
+                                      id: o.id,
+                                      paymentStatus: "pending_payment",
+                                    })
+                                  }
+                                  data-testid={`button-mark-pending-${o.id}`}
+                                >
+                                  Mark unpaid
+                                </Button>
+                              </>
+                            ) : null}
+                            {payStatus === "refund_due" ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2 text-[11px]"
+                                onClick={() =>
+                                  updatePaymentStatus.mutate({
+                                    id: o.id,
+                                    paymentStatus: "refunded",
+                                  })
+                                }
+                                data-testid={`button-mark-refunded-${o.id}`}
+                              >
+                                Mark refunded
                               </Button>
                             ) : null}
                             {!["delivered", "canceled"].includes(o.status) ? (
@@ -1275,12 +1410,37 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function KPI({ icon: Icon, label, value, testid }: { icon: any; label: string; value: string; testid?: string }) {
+function KPI({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone,
+  testid,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "positive" | "warning" | "negative";
+  testid?: string;
+}) {
+  const iconClass =
+    tone === "positive"
+      ? "text-emerald-500"
+      : tone === "warning"
+      ? "text-amber-500"
+      : tone === "negative"
+      ? "text-destructive"
+      : "text-primary";
   return (
     <div className="glass-card rounded-xl p-3" data-testid={testid}>
-      <Icon className="size-4 text-primary mb-1.5" />
-      <div className="text-lg font-bold tabular-nums">{value}</div>
+      <Icon className={`size-4 mb-1.5 ${iconClass}`} />
+      <div className="text-lg font-bold tabular-nums leading-tight">{value}</div>
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      {sub ? (
+        <div className="text-[10px] text-muted-foreground/80 mt-0.5 tabular-nums">{sub}</div>
+      ) : null}
     </div>
   );
 }
@@ -1296,4 +1456,38 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Empty({ text }: { text: string }) {
   return <div className="glass-card rounded-xl p-5 text-center text-sm text-muted-foreground">{text}</div>;
+}
+
+function PaymentBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending_payment: {
+      label: "Unpaid",
+      cls: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+    },
+    paid: {
+      label: "Paid",
+      cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+    },
+    refund_due: {
+      label: "Refund due",
+      cls: "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
+    },
+    refunded: {
+      label: "Refunded",
+      cls: "bg-slate-500/15 text-slate-300 border-slate-500/40",
+    },
+    canceled: {
+      label: "Canceled",
+      cls: "bg-red-500/15 text-red-300 border-red-500/40",
+    },
+  };
+  const m = map[status] ?? map.pending_payment;
+  return (
+    <span
+      className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border ${m.cls}`}
+      data-testid={`badge-payment-${status}`}
+    >
+      {m.label}
+    </span>
+  );
 }

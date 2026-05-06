@@ -47,6 +47,11 @@ export async function runOnce() {
     for (const order of overdue) {
       if (settings.ackTimeoutAction === "cancel") {
         await storage.updateOrderStatus(order.id, "canceled");
+        // Mirror the cancel into payment status so the unpaid total never
+        // shows up in revenue ("pending" or otherwise).
+        if (order.paymentStatus === "pending_payment") {
+          await storage.updateOrderPaymentStatus(order.id, "canceled");
+        }
         await storage.appendAudit("order.auto_canceled", String(order.id), {
           reason: "ack_timeout",
           ageMs: Date.now() - order.createdAt,

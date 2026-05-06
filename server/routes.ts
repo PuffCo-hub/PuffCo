@@ -5,6 +5,7 @@ import {
   insertOrderSchema,
   insertProductRequestSchema,
   productInputSchema,
+  PAYMENT_STATUSES,
   type PricingSettings,
   type OrderSettings,
   type NotificationSettings,
@@ -161,8 +162,8 @@ export async function registerRoutes(
       .then((notif) =>
         notify(
           {
-            title: `New order #${order.id}`,
-            body: `Total $${(order.totalCents / 100).toFixed(2)} — ack within timeout window.`,
+            title: `New order ${order.orderCode || "#" + order.id}`,
+            body: `Total $${(order.totalCents / 100).toFixed(2)} — watch Cash App note for ${order.orderCode || "#" + order.id}.`,
             tag: "order.new",
             subjectId: String(order.id),
           },
@@ -203,6 +204,14 @@ export async function registerRoutes(
       } catch {
         // ignore parse errors
       }
+      // Mirror cancel into payment status when the order hadn't been paid yet,
+      // so it never sits in "pending payment value" forever.
+      if (before.paymentStatus === "pending_payment") {
+        await storage.updateOrderPaymentStatus(id, "canceled");
+      } else if (before.paymentStatus === "paid") {
+        // If the operator cancels something already paid, flag it for refund.
+        await storage.updateOrderPaymentStatus(id, "refund_due");
+      }
     }
 
     await storage.appendAudit("order.status_changed", String(id), {
@@ -217,6 +226,46 @@ export async function registerRoutes(
     const order = await storage.markCashtagSent(id);
     if (!order) return res.status(404).json({ error: "not found" });
     await storage.appendAudit("order.cashtag_sent", String(id), {});
+    res.json(order);
+  });
+
+  // Admin payment-status transitions: pending_payment | paid | refund_due |
+  // refunded | canceled. Separate endpoint from order status so revenue and
+  // fulfillment can move independently.
+  app.post("/api/orders/:id/payment-status", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const id = Number(req.params.id);
+    const next = String(req.body?.paymentStatus || "");
+    if (!PAYMENT_STATUSES.includes(next as any)) {
+      return res.status(400).json({ error: "bad payment status" });
+    }
+    const before = await storage.getOrder(id);
+    if (!before) return res.status(404).json({ error: "not found" });
+    const order = await storage.updateOrderPaymentStatus(id, next);
+    await storage.appendAudit("order.payment_status_changed", String(id), {
+      from: before.paymentStatus,
+      to: next,
+    });
+    // Convenience: when admin marks paid for the first time and the order is
+    // still in the early lifecycle, advance fulfillment to confirmed so the
+    // driver pickup queue lights up automatically.
+    if (next === "paid" && ["placed", "pay_pending"].includes(before.status)) {
+      await storage.updateOrderStatus(id, "confirmed");
+      await storage.appendAudit("order.status_changed", String(id), {
+        from: before.status,
+        to: "confirmed",
+        reason: "payment_marked_paid",
+      });
+    }
+    res.json(order);
+  });
+
+  // Lookup by short order code (PC-NNNN). Useful for admin search and for the
+  // customer-facing confirmation flow if they ever lose the in-memory order id.
+  app.get("/api/orders/by-code/:code", async (req, res) => {
+    const code = String(req.params.code || "").toUpperCase().trim();
+    const order = await storage.getOrderByCode(code);
+    if (!order) return res.status(404).json({ error: "not found" });
     res.json(order);
   });
 
@@ -453,6 +502,47 @@ export async function registerRoutes(
     }
     const s = await storage.listSettings();
     res.json(s);
+  });
+
+  // ----------- Revenue summary -----------
+  // Splits out what is actually paid versus pending so the admin dashboard
+  // never overstates revenue. Excludes canceled orders entirely.
+  app.get("/api/admin/revenue", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const all = await storage.listOrders();
+    let paidCents = 0;
+    let pendingCents = 0;
+    let deliveredCents = 0;
+    let refundedCents = 0;
+    let paidCount = 0;
+    let pendingCount = 0;
+    let deliveredCount = 0;
+    for (const o of all) {
+      if (o.paymentStatus === "canceled") continue;
+      if (o.paymentStatus === "paid") {
+        paidCents += o.totalCents;
+        paidCount += 1;
+        if (o.status === "delivered") {
+          deliveredCents += o.totalCents;
+          deliveredCount += 1;
+        }
+      } else if (o.paymentStatus === "pending_payment") {
+        pendingCents += o.totalCents;
+        pendingCount += 1;
+      } else if (o.paymentStatus === "refunded") {
+        refundedCents += o.totalCents;
+      }
+    }
+    res.json({
+      paidCents,
+      pendingCents,
+      deliveredCents,
+      refundedCents,
+      paidCount,
+      pendingCount,
+      deliveredCount,
+      totalOrderCount: all.length,
+    });
   });
 
   // ----------- Audit log -----------

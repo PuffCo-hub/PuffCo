@@ -38,6 +38,7 @@ sqlite.pragma("journal_mode = WAL");
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_code TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     items TEXT NOT NULL,
     subtotal_cents INTEGER NOT NULL,
@@ -51,6 +52,9 @@ sqlite.exec(`
     zip TEXT NOT NULL,
     notes TEXT,
     status TEXT NOT NULL DEFAULT 'placed',
+    payment_status TEXT NOT NULL DEFAULT 'pending_payment',
+    paid_at INTEGER,
+    refunded_at INTEGER,
     cashtag_sent INTEGER NOT NULL DEFAULT 0,
     acknowledged INTEGER NOT NULL DEFAULT 0,
     acknowledged_at INTEGER,
@@ -141,7 +145,52 @@ function tryAlter(sql: string) {
   "ALTER TABLE orders ADD COLUMN flagged_at INTEGER",
   "ALTER TABLE orders ADD COLUMN vendor_id TEXT NOT NULL DEFAULT 'default'",
   "ALTER TABLE orders ADD COLUMN location_id TEXT NOT NULL DEFAULT 'default'",
+  // Payment workflow + order code (Stage One). Backfilled below.
+  "ALTER TABLE orders ADD COLUMN order_code TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending_payment'",
+  "ALTER TABLE orders ADD COLUMN paid_at INTEGER",
+  "ALTER TABLE orders ADD COLUMN refunded_at INTEGER",
 ].forEach(tryAlter);
+
+// Backfill orderCode for any pre-existing rows (best effort — keeps customer
+// references stable while still satisfying the not-empty constraint when
+// admins look at historical orders).
+function backfillOrderCodes() {
+  try {
+    const rows = sqlite
+      .prepare("SELECT id FROM orders WHERE order_code = '' OR order_code IS NULL")
+      .all() as Array<{ id: number }>;
+    const update = sqlite.prepare("UPDATE orders SET order_code = ? WHERE id = ?");
+    for (const r of rows) {
+      const code = `PC-${String(r.id).padStart(4, "0")}`;
+      update.run(code, r.id);
+    }
+  } catch (err) {
+    console.warn("[migrate] backfillOrderCodes:", (err as any)?.message);
+  }
+}
+backfillOrderCodes();
+
+// Best-effort backfill of payment_status for legacy rows: any delivered
+// order is assumed paid; canceled stays canceled; everything else stays
+// pending_payment. This keeps revenue cards honest after the migration.
+function backfillPaymentStatus() {
+  try {
+    sqlite
+      .prepare(
+        "UPDATE orders SET payment_status='paid', paid_at=COALESCE(paid_at, created_at) WHERE status='delivered' AND payment_status='pending_payment'",
+      )
+      .run();
+    sqlite
+      .prepare(
+        "UPDATE orders SET payment_status='canceled' WHERE status='canceled' AND payment_status='pending_payment'",
+      )
+      .run();
+  } catch (err) {
+    console.warn("[migrate] backfillPaymentStatus:", (err as any)?.message);
+  }
+}
+backfillPaymentStatus();
 
 export const db = drizzle(sqlite);
 
@@ -438,8 +487,10 @@ backfillStock();
 export interface IStorage {
   createOrder(order: InsertOrder, fees: { feeCents: number; totalCents: number }): Promise<Order>;
   getOrder(id: number): Promise<Order | undefined>;
+  getOrderByCode(code: string): Promise<Order | undefined>;
   listOrders(): Promise<Order[]>;
   updateOrderStatus(id: number, status: string): Promise<Order | undefined>;
+  updateOrderPaymentStatus(id: number, paymentStatus: string): Promise<Order | undefined>;
   markCashtagSent(id: number): Promise<Order | undefined>;
   acknowledgeOrder(id: number): Promise<Order | undefined>;
   flagOrder(id: number, reason?: string): Promise<Order | undefined>;
@@ -485,10 +536,24 @@ export class DatabaseStorage implements IStorage {
       } as any)
       .returning()
       .get();
-    return row as Order;
+    // Generate a short, unique order code now that we have the auto-increment
+    // id. Format: PC-NNNN (zero-padded). This is what customers paste into the
+    // Cash App note so admins can match payments back to orders.
+    const code = `PC-${String(row.id).padStart(4, "0")}`;
+    const updated = db
+      .update(orders)
+      .set({ orderCode: code })
+      .where(eq(orders.id, row.id))
+      .returning()
+      .get();
+    return (updated || { ...row, orderCode: code }) as Order;
   }
   async getOrder(id: number): Promise<Order | undefined> {
     return db.select().from(orders).where(eq(orders.id, id)).get();
+  }
+  async getOrderByCode(code: string): Promise<Order | undefined> {
+    if (!code) return undefined;
+    return db.select().from(orders).where(eq(orders.orderCode, code)).get();
   }
   async listOrders(): Promise<Order[]> {
     return db.select().from(orders).orderBy(desc(orders.createdAt)).all();
@@ -497,6 +562,24 @@ export class DatabaseStorage implements IStorage {
     return db
       .update(orders)
       .set({ status })
+      .where(eq(orders.id, id))
+      .returning()
+      .get();
+  }
+  async updateOrderPaymentStatus(
+    id: number,
+    paymentStatus: string,
+  ): Promise<Order | undefined> {
+    const patch: Record<string, unknown> = { paymentStatus };
+    if (paymentStatus === "paid") patch.paidAt = Date.now();
+    if (paymentStatus === "refunded") patch.refundedAt = Date.now();
+    if (paymentStatus === "pending_payment") {
+      patch.paidAt = null;
+      patch.refundedAt = null;
+    }
+    return db
+      .update(orders)
+      .set(patch as any)
       .where(eq(orders.id, id))
       .returning()
       .get();

@@ -7,6 +7,9 @@ import { z } from "zod";
 // no payment data.
 export const orders = sqliteTable("orders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Short, human-friendly order code customers reference in Cash App notes.
+  // Format: PC-NNNN (zero-padded counter) or PC-YYYY-XXXX. Must be unique.
+  orderCode: text("order_code").notNull().default(""),
   createdAt: integer("created_at").notNull(),
   // Items as JSON: [{id, name, brand, qty, basePrice, estPrice}]
   items: text("items").notNull(),
@@ -27,6 +30,12 @@ export const orders = sqliteTable("orders", {
   // Status: placed | pay_pending | confirmed | en_route | delivered | canceled |
   // attention_needed (flagged by the timeout sweeper when not acknowledged)
   status: text("status").notNull().default("placed"),
+  // Payment status is tracked separately from fulfillment status so admins
+  // can confirm the Cash App transfer landed before counting an order as
+  // revenue. Values: pending_payment | paid | refund_due | refunded | canceled
+  paymentStatus: text("payment_status").notNull().default("pending_payment"),
+  paidAt: integer("paid_at"),
+  refundedAt: integer("refunded_at"),
   cashtagSent: integer("cashtag_sent", { mode: "boolean" }).notNull().default(false),
   // Acknowledgement state — the operator must explicitly acknowledge new orders.
   // If left unacknowledged past the timeout window, the sweeper flags the order
@@ -42,14 +51,27 @@ export const orders = sqliteTable("orders", {
 
 export const insertOrderSchema = createInsertSchema(orders).omit({
   id: true,
+  orderCode: true,
   createdAt: true,
   status: true,
+  paymentStatus: true,
+  paidAt: true,
+  refundedAt: true,
   cashtagSent: true,
   acknowledged: true,
   acknowledgedAt: true,
   flaggedAt: true,
   feeCents: true,
 });
+
+export const PAYMENT_STATUSES = [
+  "pending_payment",
+  "paid",
+  "refund_due",
+  "refunded",
+  "canceled",
+] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof orders.$inferSelect;
