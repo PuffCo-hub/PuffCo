@@ -204,7 +204,7 @@ export default function Menu() {
         </div>
 
         <h2 className="mt-5 text-2xl font-bold tracking-tight leading-tight">
-          Order it like you'd <span className="text-primary">say it.</span>
+          Local smoke shop delivery, <span className="text-primary">made simple.</span>
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Vapes, carts, glass, papers, wraps — written the way you'd order in-store.
