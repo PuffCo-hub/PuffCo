@@ -162,7 +162,7 @@ function backfillOrderCodes() {
       .all() as Array<{ id: number }>;
     const update = sqlite.prepare("UPDATE orders SET order_code = ? WHERE id = ?");
     for (const r of rows) {
-      const code = `PG-${String(r.id).padStart(4, "0")}`;
+      const code = `PG${String(r.id).padStart(2, "0")}`;
       update.run(code, r.id);
     }
   } catch (err) {
@@ -537,9 +537,9 @@ export class DatabaseStorage implements IStorage {
       .returning()
       .get();
     // Generate a short, unique order code now that we have the auto-increment
-    // id. Format: PG-NNNN (zero-padded). This is what customers paste into the
+    // id. Format: PG01, PG02, etc. This is what customers paste into the
     // Cash App note so admins can match payments back to orders.
-    const code = `PG-${String(row.id).padStart(4, "0")}`;
+    const code = `PG${String(row.id).padStart(2, "0")}`;
     const updated = db
       .update(orders)
       .set({ orderCode: code })

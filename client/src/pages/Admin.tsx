@@ -620,7 +620,7 @@ export default function Admin() {
                     !o.acknowledged && ["placed", "pay_pending"].includes(o.status);
                   const flagged = o.status === "attention_needed";
                   const payStatus = (o as any).paymentStatus || "pending_payment";
-                  const orderCode = (o as any).orderCode || `PG-${String(o.id).padStart(4, "0")}`;
+                  const orderCode = (o as any).orderCode || `PG${String(o.id).padStart(2, "0")}`;
                   const isUnpaid = payStatus === "pending_payment";
                   let orderedItems: OrderItem[] = [];
                   try {

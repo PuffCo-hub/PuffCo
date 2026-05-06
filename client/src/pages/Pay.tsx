@@ -17,7 +17,7 @@ export default function Pay() {
   const [, navigate] = useLocation();
   const [copied, setCopied] = useState<"tag" | "code" | "amount" | null>(null);
 
-  // Once the order is placed we have a server-issued PG-NNNN code; show it
+  // Once the order is placed we have a short server-issued code; show it
   // immediately so the customer can paste it into their Cash App note.
   const { data: order } = useQuery<Order>({
     queryKey: ["/api/orders", lastOrderId],
@@ -26,13 +26,25 @@ export default function Pay() {
   });
 
   const orderCode =
-    order?.orderCode || (lastOrderId != null ? `PG-${String(lastOrderId).padStart(4, "0")}` : "");
+    order?.orderCode || (lastOrderId != null ? `PG${String(lastOrderId).padStart(2, "0")}` : "");
   const amount = (totalCents / 100).toFixed(2);
   const noteText = orderCode ? `PuffGo order ${orderCode}` : "PuffGo order";
   // Cash App's hosted-link "note" param doesn't always pre-fill the receiver
   // note, but the deep link still works for the amount + recipient — the user
   // tap the note field manually if needed.
   const cashAppUrl = `https://cash.app/${CASHTAG}/${amount}`;
+
+  async function copyCodeAndOpenCashApp() {
+    if (orderCode && typeof navigator !== "undefined" && navigator.clipboard) {
+      await navigator.clipboard.writeText(orderCode);
+      setCopied("code");
+      toast({
+        title: "Order code copied",
+        description: `Paste ${orderCode} in the Cash App note before sending.`,
+      });
+    }
+    window.open(cashAppUrl, "_blank", "noopener,noreferrer");
+  }
 
   function copy(value: string, kind: "tag" | "code" | "amount", label: string) {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -74,12 +86,14 @@ export default function Pay() {
           {CASHTAG}
         </div>
 
-        <a href={cashAppUrl} target="_blank" rel="noreferrer" data-testid="link-cashapp">
-          <Button className="ember-button h-12 w-full text-base font-semibold">
-            <ExternalLink className="size-4 mr-2" />
-            Open Cash App
-          </Button>
-        </a>
+        <Button
+          className="ember-button h-12 w-full text-base font-semibold"
+          onClick={copyCodeAndOpenCashApp}
+          data-testid="button-copy-code-open-cashapp"
+        >
+          <ExternalLink className="size-4 mr-2" />
+          Copy code & open Cash App
+        </Button>
       </div>
 
       <div className="rounded-3xl border-2 border-amber-400/70 bg-amber-400/15 p-4 mb-4 text-center shadow-[0_0_40px_rgba(251,191,36,0.16)]">
@@ -94,13 +108,13 @@ export default function Pay() {
           data-testid="button-copy-large-order-code"
         >
           <div className="text-[11px] text-muted-foreground mb-1">
-            Copy this code and paste it in the Cash App note
+            This code copies automatically when you open Cash App
           </div>
           <div className="font-mono text-4xl font-black tracking-widest text-amber-200">
-            {orderCode || "PG-..."}
+            {orderCode || "PG..."}
           </div>
           <div className="text-xs text-amber-100/80 mt-2">
-            No code in the note = payment may be delayed
+            Paste it in the Cash App note before sending
           </div>
         </button>
       </div>
@@ -156,7 +170,7 @@ export default function Pay() {
           <Step n={3}>
             In the Cash App <span className="font-semibold">note / "for"</span> field, paste your
             order code:{" "}
-            <span className="font-mono font-semibold text-primary">{orderCode || "PG-..."}</span>.
+            <span className="font-mono font-semibold text-primary">{orderCode || "PG..."}</span>.
             This is how we match your payment to your order.
           </Step>
           <Step n={4}>

@@ -260,7 +260,7 @@ export async function registerRoutes(
     res.json(order);
   });
 
-  // Lookup by short order code (PG-NNNN). Useful for admin search and for the
+  // Lookup by short order code (PG01, PG02, etc.). Useful for admin search and for the
   // customer-facing confirmation flow if they ever lose the in-memory order id.
   app.get("/api/orders/by-code/:code", async (req, res) => {
     const code = String(req.params.code || "").toUpperCase().trim();

@@ -94,7 +94,7 @@ export default function Confirm() {
           className="mt-1 text-3xl font-bold tracking-wider text-primary font-mono"
           data-testid="text-order-code"
         >
-          {order?.orderCode || `PG-${String(lastOrderId).padStart(4, "0")}`}
+          {order?.orderCode || `PG${String(lastOrderId).padStart(2, "0")}`}
         </div>
         <h2 className="text-lg font-semibold mt-3">Thanks for your order</h2>
         <p className="text-sm text-muted-foreground mt-1">
