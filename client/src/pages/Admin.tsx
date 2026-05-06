@@ -202,15 +202,18 @@ export default function Admin() {
 
   const { data: orders = [] } = useQuery<Order[]>({
     queryKey: ["/api/orders"],
-    refetchInterval: 5000,
+    enabled: authed,
+    refetchInterval: authed ? 5000 : false,
   });
   const { data: requests = [] } = useQuery<ProductRequest[]>({
     queryKey: ["/api/requests"],
-    refetchInterval: 5000,
+    enabled: authed,
+    refetchInterval: authed ? 5000 : false,
   });
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products?all=true"],
-    refetchInterval: 5000,
+    enabled: authed,
+    refetchInterval: authed ? 5000 : false,
   });
   const { data: settings } = useQuery<{
     pricing: PricingSettings;
@@ -416,9 +419,9 @@ export default function Admin() {
       .map(([k, count]) => ({ text: reqLatestText.get(k) || k, count }));
   }, [requests]);
 
-  return (
-    <Shell title="Store manager" back="/menu" showCart={false}>
-      {!authed ? (
+  if (!authed) {
+    return (
+      <Shell title="Store manager" back="/menu" showCart={false}>
         <div className="bg-card border border-card-border rounded-3xl p-5 mb-5">
           <h2 className="text-lg font-semibold mb-1">Admin access</h2>
           <p className="text-sm text-muted-foreground mb-4">
@@ -449,9 +452,13 @@ export default function Admin() {
             Use the admin PIN saved in your hosting settings.
           </div>
         </div>
-      ) : null}
+      </Shell>
+    );
+  }
 
-      {authed && (unackCount > 0 || flaggedCount > 0 || lowStock.length > 0 || outOfStock.length > 0) ? (
+  return (
+    <Shell title="Store manager" back="/menu" showCart={false}>
+      {(unackCount > 0 || flaggedCount > 0 || lowStock.length > 0 || outOfStock.length > 0) ? (
         <div
           className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 mb-3 space-y-1.5"
           data-testid="banner-attention"
