@@ -18,15 +18,19 @@ export function Shell({ children, title, back, showCart = true }: Props) {
   const cartCount = lines.reduce((s, l) => s + l.qty, 0);
   return (
     <div className="mobile-shell smoke-overlay relative flex flex-col">
-      <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-y-0 left-1/2 z-0 w-full max-w-[440px] -translate-x-1/2 overflow-hidden"
+      >
         <img
           src={neonDeliveryBg}
           alt=""
-          className="h-full w-full object-cover opacity-[0.12] blur-[1px] animate-[slow-pan_22s_ease-in-out_infinite_alternate]"
+          className="h-full w-full object-cover opacity-[0.48] animate-[slow-pan_22s_ease-in-out_infinite_alternate]"
         />
-        <div className="absolute inset-0 bg-background/80" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/45 via-background/58 to-background/78" />
+        <div className="absolute inset-0 bg-[radial-gradient(90%_60%_at_50%_20%,transparent,hsl(var(--background)/0.54)_72%)]" />
       </div>
-      <header className="sticky top-0 z-30 backdrop-blur-md bg-background/70 border-b border-border">
+      <header className="sticky top-0 z-30 backdrop-blur-md bg-background/78 border-b border-border">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3 min-w-0">
             {back ? (

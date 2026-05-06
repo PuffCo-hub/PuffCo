@@ -47,7 +47,7 @@ export default function Address() {
   return (
     <Shell title="Delivery address" back="/cart" showCart={false}>
       <p className="text-sm text-muted-foreground mb-5">
-        We use this address for this order only. PuffCo does not save customer
+        We use this address for this order only. PuffGo does not save customer
         profiles or addresses across orders.
       </p>
 

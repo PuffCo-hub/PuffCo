@@ -423,7 +423,7 @@ export default function Menu() {
         <div className="glass-card rounded-2xl p-4">
           <h3 className="font-semibold mb-1">Don't see it? Request it.</h3>
           <p className="text-xs text-muted-foreground mb-3">
-            Write in a regular purchase so PuffCo can learn what should be stocked next.
+            Write in a regular purchase so PuffGo can learn what should be stocked next.
           </p>
           <Link href="/request">
             <Button variant="outline" className="w-full" data-testid="button-open-request">

@@ -1,8 +1,5 @@
-import logoReference from "@/assets/brand/puffco-logo-reference.jpeg";
-
 /**
- * PuffCo wordmark — uses the user's smoke-logo reference directly for this
- * prototype pass so the app matches the requested visual direction.
+ * PuffGo wordmark — customer-facing brand mark with a soft smoke/cloud feel.
  */
 type Props = {
   size?: number; // height in px
@@ -17,16 +14,28 @@ export function SmokeWordmark({
 }: Props) {
   const w = size * 2.55;
   return (
-    <img
+    <div
       role="img"
-      aria-label="PuffCo"
-      src={logoReference}
-      width={w}
-      height={size}
-      className={`object-contain rounded-sm ${className}`}
-      style={{ width: w, height: size }}
+      aria-label="PuffGo"
+      className={`relative inline-flex items-center justify-center font-extrabold tracking-[-0.08em] text-white ${className}`}
+      style={{
+        width: w,
+        height: size,
+        fontSize: size * 0.55,
+        lineHeight: 1,
+        textShadow:
+          "0 0 18px rgba(255,255,255,0.42), 0 0 34px rgba(72,255,151,0.26)",
+      }}
       data-testid="img-wordmark"
-    />
+    >
+      <span
+        aria-hidden
+        className="absolute inset-x-3 top-1/2 h-1/2 -translate-y-1/2 rounded-full bg-white/15 blur-xl"
+      />
+      <span className="relative">
+        Puff<span className="text-primary drop-shadow-[0_0_18px_rgba(72,255,151,0.45)]">Go</span>
+      </span>
+    </div>
   );
 }
 
@@ -39,7 +48,7 @@ export function SmokeMark({ size = 28 }: { size?: number }) {
       viewBox="0 0 64 64"
       xmlns="http://www.w3.org/2000/svg"
       role="img"
-      aria-label="PuffCo mark"
+      aria-label="PuffGo mark"
     >
       <defs>
         <linearGradient id="markGrad" x1="0" y1="0" x2="0" y2="1">

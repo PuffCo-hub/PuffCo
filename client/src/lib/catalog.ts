@@ -1,4 +1,4 @@
-// PuffCo catalog helpers. Products come from the backend database so they can
+// PuffGo catalog helpers. Products come from the backend database so they can
 // be added/edited from Admin without touching code. The server augments the
 // raw row with derived `available` and `lowStock` flags so the customer side
 // can disable add-to-cart instantly when stock hits zero.
@@ -27,7 +27,7 @@ export const CATEGORY_OPTIONS: {
     id: "carts",
     label: "Carts",
     helper: "510 carts, pods, and batteries",
-    subcategories: ["Rove", "Select", "Cookies", "STIIIZY", "PuffCo", "CCELL", "Lookah", "Yocan", "Raw Garden", "PlugPlay"],
+    subcategories: ["Rove", "Select", "Cookies", "STIIIZY", "PuffGo", "CCELL", "Lookah", "Yocan", "Raw Garden", "PlugPlay"],
   },
   {
     id: "glass",

@@ -28,7 +28,7 @@ export default function Pay() {
   const orderCode =
     order?.orderCode || (lastOrderId != null ? `PC-${String(lastOrderId).padStart(4, "0")}` : "");
   const amount = (totalCents / 100).toFixed(2);
-  const noteText = orderCode ? `PuffCo order ${orderCode}` : "PuffCo order";
+  const noteText = orderCode ? `PuffGo order ${orderCode}` : "PuffGo order";
   // Cash App's hosted-link "note" param doesn't always pre-fill the receiver
   // note, but the deep link still works for the amount + recipient — the user
   // tap the note field manually if needed.
@@ -150,7 +150,7 @@ export default function Pay() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-muted-foreground mb-6">
-        PuffCo does not process payment and does not store payment information. Cash App is a
+        PuffGo does not process payment and does not store payment information. Cash App is a
         third-party service — using it is not a claim of compliance with any specific regulatory
         requirement.
       </p>

@@ -1,6 +1,6 @@
 {
-  "name": "PuffCo — Smoke Shop Delivery",
-  "short_name": "PuffCo",
+  "name": "PuffGo — Smoke Shop Delivery",
+  "short_name": "PuffGo",
   "description": "Local smoke shop delivery with Cash App checkout and ID required at the door.",
   "start_url": "./",
   "scope": "./",

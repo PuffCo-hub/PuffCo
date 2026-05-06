@@ -186,7 +186,19 @@ export default function Admin() {
   const [tab, setTab] = useState<Tab>("orders");
   const [form, setForm] = useState<ProductForm>(blankForm);
   const [pin, setPin] = useState("");
-  const authed = pin === "PuffCo2026";
+  const [authed, setAuthed] = useState(false);
+  const [authError, setAuthError] = useState("");
+
+  async function unlockAdmin() {
+    setAuthError("");
+    try {
+      await adminRequest(pin, "GET", "/api/admin/settings");
+      setAuthed(true);
+    } catch {
+      setAuthed(false);
+      setAuthError("That PIN did not work. Check the PIN saved in Render.");
+    }
+  }
 
   const { data: orders = [] } = useQuery<Order[]>({
     queryKey: ["/api/orders"],
@@ -415,15 +427,26 @@ export default function Admin() {
           </p>
           <Input
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
+            onChange={(e) => {
+              setPin(e.target.value);
+              setAuthError("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") unlockAdmin();
+            }}
             placeholder="Admin PIN"
             type="password"
             className="mb-3"
             data-testid="input-admin-pin"
           />
+          <Button className="ember-button w-full mb-3" onClick={unlockAdmin}>
+            Unlock admin
+          </Button>
+          {authError ? (
+            <div className="text-xs text-destructive mb-2">{authError}</div>
+          ) : null}
           <div className="text-xs text-muted-foreground">
-            Default preview PIN: PuffCo2026. Change this before a production
-            launch.
+            Use the admin PIN saved in your hosting settings.
           </div>
         </div>
       ) : null}
@@ -953,7 +976,7 @@ function ProductEditor({
         <div className="grid grid-cols-2 gap-2">
           <Field label="Vendor">
             <select className="h-10 rounded-md bg-background border border-input px-3 text-sm" value={form.vendorId} onChange={(e) => set("vendorId", e.target.value)} data-testid="select-vendor">
-              {vendors.length === 0 ? <option value="default">PuffCo Default</option> : vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              {vendors.length === 0 ? <option value="default">PuffGo Default</option> : vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
             </select>
           </Field>
           <Field label="Location">
@@ -1266,7 +1289,7 @@ function SettingsPanel({
             />
           </Field>
           <p className="text-[11px] text-muted-foreground">
-            All compliance text is operator-supplied. PuffCo prototype does not
+            All compliance text is operator-supplied. PuffGo prototype does not
             provide legal advice; verify your local, state, and federal rules
             before launch.
           </p>
