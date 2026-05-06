@@ -1,24 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PuffCo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PuffGo">
   <defs>
-    <radialGradient id="bg" cx="50%" cy="35%" r="80%">
-      <stop offset="0%" stop-color="#1d1b20"/>
-      <stop offset="100%" stop-color="#0a0a0c"/>
+    <radialGradient id="bg" cx="50%" cy="32%" r="78%">
+      <stop offset="0%" stop-color="#18382f"/>
+      <stop offset="55%" stop-color="#07140f"/>
+      <stop offset="100%" stop-color="#020403"/>
     </radialGradient>
-    <linearGradient id="ember" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffb56b"/>
-      <stop offset="60%" stop-color="#f37a1a"/>
-      <stop offset="100%" stop-color="#9a2f00"/>
+    <radialGradient id="halo" cx="50%" cy="44%" r="50%">
+      <stop offset="0%" stop-color="#8fffe2" stop-opacity="0.42"/>
+      <stop offset="62%" stop-color="#26d69f" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#26d69f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cloud" x1="72" y1="140" x2="436" y2="386" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f6fff9"/>
+      <stop offset="42%" stop-color="#bcffe4"/>
+      <stop offset="100%" stop-color="#4ee5ad"/>
     </linearGradient>
-    <radialGradient id="smoke" cx="50%" cy="40%" r="55%">
-      <stop offset="0%" stop-color="#9b73ff" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#9b73ff" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="letters" x1="128" y1="166" x2="385" y2="356" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="62%" stop-color="#d7fff0"/>
+      <stop offset="100%" stop-color="#85ffc9"/>
+    </linearGradient>
+    <filter id="softGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.12 0 0 0 0 1 0 0 0 0 0.65 0 0 0 0.8 0" result="greenBlur"/>
+      <feMerge>
+        <feMergeNode in="greenBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="letterGlow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <circle cx="256" cy="220" r="180" fill="url(#smoke)"/>
-  <!-- Stylised P mark with ember dot -->
-  <g transform="translate(146 110)">
-    <path d="M0 292 V0 H120 a92 92 0 1 1 0 184 H56 v108 z" fill="none" stroke="#f5f3ee" stroke-width="36" stroke-linejoin="round"/>
-    <circle cx="208" cy="92" r="22" fill="url(#ember)"/>
+  <circle cx="256" cy="238" r="190" fill="url(#halo)"/>
+  <g filter="url(#softGlow)" opacity="0.98">
+    <path d="M116 322c-34 0-62-27-62-61 0-31 23-57 53-61 12-50 57-87 111-87 35 0 67 15 89 39 12-7 27-11 42-11 47 0 85 38 85 85 0 7-1 15-3 22 22 11 37 34 37 60 0 37-30 67-67 67H119c-1 0-2 0-3 0z" fill="url(#cloud)" opacity="0.92"/>
+    <path d="M122 337c-35 0-64-24-72-56 13 22 38 36 66 36h284c29 0 54-19 63-45 3 7 5 15 5 24 0 38-31 69-69 69H120c-31 0-58-19-69-46 17 12 42 18 71 18z" fill="#0ed48b" opacity="0.23"/>
   </g>
+  <g filter="url(#letterGlow)">
+    <text x="256" y="318" text-anchor="middle" font-family="Arial Black, Impact, system-ui, sans-serif" font-size="154" font-weight="900" letter-spacing="-10" fill="#052218" stroke="#ecfff7" stroke-width="14" paint-order="stroke fill">PG</text>
+    <text x="256" y="318" text-anchor="middle" font-family="Arial Black, Impact, system-ui, sans-serif" font-size="154" font-weight="900" letter-spacing="-10" fill="url(#letters)">PG</text>
+  </g>
+  <path d="M175 138c-21-28 31-35 13-70 38 26 8 54 34 80M303 128c-19-29 33-36 16-72 36 29 3 57 31 82" fill="none" stroke="#9effd7" stroke-width="14" stroke-linecap="round" opacity="0.55"/>
 </svg>
