@@ -194,7 +194,7 @@ export default function Menu() {
               </div>
               <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <Clock className="size-3.5" />
-                <span>Prototype estimate · ID required at handoff</span>
+                <span>Fast local handoff · ID required at delivery</span>
               </div>
             </div>
             <div className="rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-semibold text-primary border border-primary/20">
@@ -207,7 +207,7 @@ export default function Menu() {
           Local smoke shop delivery, <span className="text-primary">made simple.</span>
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Vapes, carts, glass, papers, wraps — written the way you'd order in-store.
+          Browse trending vapes, carts, glass, papers, and wraps.
         </p>
 
         {/* Quick category chip rail */}

@@ -48,7 +48,7 @@ export default function Address() {
     <Shell title="Delivery address" back="/cart" showCart={false}>
       <p className="text-sm text-muted-foreground mb-5">
         We use this address for this order only. PuffCo does not save customer
-        profiles or addresses across orders in this prototype.
+        profiles or addresses across orders.
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

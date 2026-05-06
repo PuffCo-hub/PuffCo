@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { ChevronLeft, ShoppingBag } from "lucide-react";
 import { SmokeWordmark } from "./SmokeWordmark";
 import { useCart } from "@/lib/cart-context";
+import neonDeliveryBg from "@/assets/brand/neon-delivery-bg.jpeg";
 
 type Props = {
   children: ReactNode;
@@ -17,6 +18,14 @@ export function Shell({ children, title, back, showCart = true }: Props) {
   const cartCount = lines.reduce((s, l) => s + l.qty, 0);
   return (
     <div className="mobile-shell smoke-overlay relative flex flex-col">
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <img
+          src={neonDeliveryBg}
+          alt=""
+          className="h-full w-full object-cover opacity-[0.12] blur-[1px] animate-[slow-pan_22s_ease-in-out_infinite_alternate]"
+        />
+        <div className="absolute inset-0 bg-background/80" />
+      </div>
       <header className="sticky top-0 z-30 backdrop-blur-md bg-background/70 border-b border-border">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -82,8 +91,8 @@ export function StickyFooter({ children }: { children: ReactNode }) {
 export function Disclaimer() {
   return (
     <p className="text-[11px] leading-relaxed text-muted-foreground">
-      21+ only. Valid government-issued ID required at handoff. PuffCo is a
-      prototype concept and not legal or compliance advice.
+      21+ only. Valid government-issued ID required at handoff. Availability,
+      delivery, and payment are subject to local rules.
     </p>
   );
 }

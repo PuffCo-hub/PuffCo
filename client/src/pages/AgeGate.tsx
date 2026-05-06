@@ -3,6 +3,7 @@ import { useCart } from "@/lib/cart-context";
 import { SmokeWordmark } from "@/components/SmokeWordmark";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, Truck, Clock, Sparkles } from "lucide-react";
+import neonDeliveryBg from "@/assets/brand/neon-delivery-bg.jpeg";
 
 export default function AgeGate() {
   const [, navigate] = useLocation();
@@ -10,15 +11,18 @@ export default function AgeGate() {
 
   return (
     <div className="mobile-shell relative flex min-h-[100dvh] flex-col px-6 py-8 text-center overflow-hidden">
-      {/* Smoke + ember visual layers — deeper, more cinematic than the previous overlay. */}
+      {/* Neon delivery visual with smoke overlays. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        {/* base radial wash */}
-        <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_-10%,hsl(24_90%_56%/0.18),transparent_55%),radial-gradient(120%_80%_at_50%_110%,hsl(270_50%_50%/0.18),transparent_60%)]" />
-        {/* drifting smoke blobs */}
+        <img
+          src={neonDeliveryBg}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover opacity-45 animate-[slow-pan_18s_ease-in-out_infinite_alternate]"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/80 to-background" />
+        <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_-10%,hsl(145_80%_45%/0.18),transparent_55%),radial-gradient(120%_80%_at_50%_110%,hsl(145_60%_35%/0.16),transparent_60%)]" />
         <div className="absolute -top-32 -left-16 size-[420px] rounded-full bg-primary/10 blur-[120px]" />
-        <div className="absolute -bottom-32 -right-12 size-[380px] rounded-full bg-violet-500/15 blur-[120px]" />
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 size-[320px] rounded-full bg-fuchsia-500/10 blur-[140px]" />
-        {/* fine grain so it doesn't look like a CSS gradient demo */}
+        <div className="absolute -bottom-32 -right-12 size-[380px] rounded-full bg-emerald-500/15 blur-[120px]" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 size-[320px] rounded-full bg-cyan-500/10 blur-[140px]" />
         <div
           className="absolute inset-0 opacity-[0.06] mix-blend-overlay"
           style={{
@@ -31,7 +35,7 @@ export default function AgeGate() {
       <div className="flex-1 flex flex-col items-center justify-center w-full">
         <div className="mb-1 flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] uppercase tracking-[0.22em] text-primary font-semibold">
           <Sparkles className="size-3" />
-          Stage One · prototype
+          Local delivery
         </div>
 
         <div className="mt-6 mb-3">
@@ -42,14 +46,14 @@ export default function AgeGate() {
           className="text-[2.1rem] leading-[1.05] font-bold tracking-tight max-w-sm"
           data-testid="text-age-title"
         >
-          Smoke shop, delivered.
+          Smoke shop delivery,
           <br />
-          <span className="text-primary">Order in plain English.</span>
+          <span className="text-primary">right to your door.</span>
         </h1>
 
         <p className="mt-4 max-w-xs text-sm text-muted-foreground leading-relaxed">
-          Vapes, carts, glass, papers, wraps. Cash App at checkout — short order code keeps
-          payment matched. ID checked at the door.
+          Browse popular vapes, carts, glass, papers, and wraps. Pay with Cash App, include
+          your order code, and have your ID ready at handoff.
         </p>
 
         {/* Trust strip */}
@@ -85,8 +89,8 @@ export default function AgeGate() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-muted-foreground/80 max-w-xs mx-auto mt-8">
-        Prototype concept only. PuffCo does not store ID images, dates of birth, payment data,
-        or persistent customer profiles. This is not legal or compliance advice.
+        PuffCo does not store ID images, dates of birth, payment data, or persistent
+        customer profiles. Availability and delivery are subject to local rules.
       </p>
     </div>
   );
