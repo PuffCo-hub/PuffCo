@@ -3,13 +3,14 @@ import { Shell, Disclaimer } from "@/components/Shell";
 import {
   CATEGORY_OPTIONS,
   applyMarkup,
+  categoryMatches,
   formatPrice,
   type CategoryId,
   type Product,
   type Shop,
 } from "@/lib/catalog";
 import { useCart } from "@/lib/cart-context";
-import { Search, Plus, Sparkles, ChevronRight, X, MapPin, SlidersHorizontal, Clock, Star, Store } from "lucide-react";
+import { Search, Plus, Sparkles, ChevronRight, X, MapPin, SlidersHorizontal, Clock, Star, Store, Disc3 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -107,7 +108,7 @@ function CategoryTile({
   products: Product[];
   children?: React.ReactNode;
 }) {
-  const preview = products.find((p) => p.category === category.id);
+  const preview = products.find((p) => categoryMatches(category, p.category));
   return (
     <div className={`bg-card rounded-2xl overflow-hidden border transition ${active ? "border-primary/80" : "border-card-border"}`}>
       <button
@@ -116,7 +117,13 @@ function CategoryTile({
         data-testid={`button-category-${category.id}`}
       >
         <div className="flex items-center gap-3">
-          {preview ? <ProductImage product={preview} compact /> : null}
+          {preview ? (
+            <ProductImage product={preview} compact />
+          ) : category.fallbackIcon === "grinder" ? (
+            <div className="size-12 shrink-0 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
+              <Disc3 className="size-6" />
+            </div>
+          ) : null}
           <div className="min-w-0 flex-1">
             <div className="font-semibold text-sm">{category.label}</div>
             <div className="text-[11px] leading-snug text-muted-foreground mt-0.5">{category.helper}</div>
@@ -163,8 +170,11 @@ export default function Menu() {
   const popular = products.filter((p) => p.popular && p.available).slice(0, 10);
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
+    const activeOption = activeCategory
+      ? CATEGORY_OPTIONS.find((c) => c.id === activeCategory)
+      : undefined;
     return products.filter((p) => {
-      const matchesCategory = !activeCategory || p.category === activeCategory;
+      const matchesCategory = !activeOption || categoryMatches(activeOption, p.category);
       const matchesSubcategory = !activeSubcategory || p.subcategory === activeSubcategory || p.brand === activeSubcategory;
       const matchesSearch =
         !term ||
@@ -173,7 +183,7 @@ export default function Menu() {
         p.detail.toLowerCase().includes(term) ||
         p.brand.toLowerCase().includes(term) ||
         p.subcategory.toLowerCase().includes(term) ||
-        CATEGORY_OPTIONS.find((c) => c.id === p.category)?.label.toLowerCase().includes(term);
+        CATEGORY_OPTIONS.find((c) => categoryMatches(c, p.category))?.label.toLowerCase().includes(term);
       return matchesCategory && matchesSubcategory && matchesSearch;
     });
   }, [q, activeCategory, activeSubcategory, products]);
@@ -184,7 +194,9 @@ export default function Menu() {
   }
 
   function productsForCategory(id: CategoryId) {
-    return filtered.filter((p) => p.category === id);
+    const option = CATEGORY_OPTIONS.find((c) => c.id === id);
+    if (!option) return [];
+    return filtered.filter((p) => categoryMatches(option, p.category));
   }
 
   return (

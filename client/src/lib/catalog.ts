@@ -22,14 +22,31 @@ export type Shop = {
   accent: string;
 };
 
-export type CategoryId = "vapes" | "carts" | "glass" | "papers" | "wraps" | "accessories";
+export type CategoryId =
+  | "vapes"
+  | "carts"
+  | "glass"
+  | "papers"
+  | "wraps"
+  | "flower"
+  | "accessories";
 
-export const CATEGORY_OPTIONS: {
+export type CategoryOption = {
   id: CategoryId;
   label: string;
   helper: string;
   subcategories: string[];
-}[] = [
+  // DB categories whose products belong in this customer-facing section.
+  // Defaults to [id] when omitted. Lets us merge "papers" + "wraps" into one
+  // visible "Papers/Wraps" tile without touching stored product rows.
+  matches?: CategoryId[];
+  // Optional fallback Lucide icon name used by the customer Menu's category
+  // tile when no product in this section has loaded yet, so the tile still
+  // has a representative thumbnail. Resolved in Menu.tsx.
+  fallbackIcon?: "grinder" | "leaf" | "flame" | "package";
+};
+
+export const CATEGORY_OPTIONS: CategoryOption[] = [
   {
     id: "vapes",
     label: "Vapes",
@@ -43,6 +60,12 @@ export const CATEGORY_OPTIONS: {
     subcategories: ["Rove", "Select", "Cookies", "STIIIZY", "PuffGo", "CCELL", "Lookah", "Yocan", "Raw Garden", "PlugPlay"],
   },
   {
+    id: "flower",
+    label: "Flower",
+    helper: "Hemp and CBD flower",
+    subcategories: ["Indica", "Sativa", "Hybrid", "Pre-Rolls", "Eighths", "Quarters"],
+  },
+  {
     id: "glass",
     label: "Glass",
     helper: "Bongs, bubblers, pipes, and rigs",
@@ -50,23 +73,30 @@ export const CATEGORY_OPTIONS: {
   },
   {
     id: "papers",
-    label: "Papers",
-    helper: "Rolling papers, cones, and trays",
-    subcategories: ["RAW", "Elements", "Zig-Zag", "OCB", "King Palm", "Blazy Susan", "Cones", "1¼ Size", "King Size", "Rolling Trays"],
-  },
-  {
-    id: "wraps",
-    label: "Wraps",
-    helper: "Wraps, leaves, and hemp rolls",
-    subcategories: ["Backwoods", "Dutch Masters", "Swisher", "White Owl", "Game", "High Hemp", "Juicy Jay's", "Zig-Zag Wraps", "Grabba", "Fronto"],
+    label: "Papers/Wraps",
+    helper: "Rolling papers, cones, wraps, and trays",
+    matches: ["papers", "wraps"],
+    subcategories: [
+      "RAW", "Elements", "Zig-Zag", "OCB", "King Palm", "Blazy Susan", "Cones", "Rolling Trays",
+      "Backwoods", "Dutch Masters", "Swisher", "White Owl", "Game", "High Hemp", "Juicy Jay's", "Grabba",
+    ],
   },
   {
     id: "accessories",
     label: "Accessories",
     helper: "Lighters, grinders, batteries, and tools",
     subcategories: ["Lighters", "Grinders", "Batteries", "Torches", "Trays", "Storage", "Cleaning", "Scales", "Tips", "Tools"],
+    fallbackIcon: "grinder",
   },
 ];
+
+// Returns true when a product's stored DB category belongs in the given
+// customer-facing section. Sections without an explicit `matches` list only
+// claim their own id.
+export function categoryMatches(option: CategoryOption, productCategory: string): boolean {
+  const ids = option.matches ?? [option.id];
+  return ids.includes(productCategory as CategoryId);
+}
 
 // Customer-facing markup applied to listed prices. Mirrors the
 // `pricing.markupPercent` setting served by /api/settings; when the setting
