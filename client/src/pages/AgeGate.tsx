@@ -10,7 +10,7 @@ export default function AgeGate() {
   const { setAgeVerified } = useCart();
 
   return (
-    <div className="mobile-shell relative flex min-h-[100dvh] flex-col px-6 py-8 text-center overflow-hidden">
+    <div className="mobile-shell safe-top relative flex min-h-[100dvh] flex-col px-6 pb-8 text-center overflow-hidden">
       {/* Neon delivery visual with smoke overlays. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <img

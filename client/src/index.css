@@ -153,6 +153,20 @@
     margin-inline: auto;
     min-height: 100dvh;
     overflow-x: hidden;
+    /* Reserve room for the iPhone/Android home-indicator on installed PWA */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Push the sticky app header below the device status bar (notch/clock/battery)
+     when the app is opened as an installed PWA with black-translucent status bar. */
+  .app-header {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* Page content that begins at the top of the screen (e.g. AgeGate) needs the
+     same allowance so the wordmark and headline don't sit underneath the status bar. */
+  .safe-top {
+    padding-top: max(env(safe-area-inset-top), 1.5rem);
   }
 
   html, body {

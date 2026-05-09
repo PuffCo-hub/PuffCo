@@ -87,16 +87,16 @@ export default function Cart() {
                 >
                   <ProductImage product={l.product} compact />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
                       {l.product.brand}
                     </div>
-                    <div className="text-sm font-semibold truncate">
+                    <div className="text-[15px] font-semibold truncate">
                       {l.product.orderName}
                     </div>
-                    <div className="text-[11px] text-muted-foreground truncate">
+                    <div className="text-[12px] text-muted-foreground truncate">
                       {l.product.detail}
                     </div>
-                    <div className="text-xs text-muted-foreground tabular-nums flex items-center gap-1.5 flex-wrap">
+                    <div className="text-[13px] text-foreground/80 tabular-nums flex items-center gap-1.5 flex-wrap font-medium">
                       <span>{formatPrice(est)} ea · est.</span>
                       {!l.available ? (
                         <button
@@ -112,24 +112,26 @@ export default function Cart() {
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-1 bg-card border border-card-border rounded-full px-1">
                       <button
-                        className="size-7 flex items-center justify-center text-muted-foreground hover-elevate rounded-full"
+                        className="size-9 flex items-center justify-center text-foreground hover-elevate rounded-full"
                         onClick={() => setQty(l.product.id, l.qty - 1)}
                         data-testid={`button-dec-${l.product.id}`}
+                        aria-label="Decrease quantity"
                       >
-                        <Minus className="size-3.5" />
+                        <Minus className="size-4" />
                       </button>
                       <span
-                        className="min-w-[1.25rem] text-center text-sm tabular-nums"
+                        className="min-w-[1.5rem] text-center text-[15px] font-semibold tabular-nums"
                         data-testid={`text-qty-${l.product.id}`}
                       >
                         {l.qty}
                       </span>
                       <button
-                        className="size-7 flex items-center justify-center text-muted-foreground hover-elevate rounded-full"
+                        className="size-9 flex items-center justify-center text-foreground hover-elevate rounded-full"
                         onClick={() => setQty(l.product.id, l.qty + 1)}
                         data-testid={`button-inc-${l.product.id}`}
+                        aria-label="Increase quantity"
                       >
-                        <Plus className="size-3.5" />
+                        <Plus className="size-4" />
                       </button>
                     </div>
                     <button
@@ -146,16 +148,16 @@ export default function Cart() {
           </div>
 
           <div className="glass-card rounded-xl p-4 mb-5">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Estimated subtotal</span>
+            <div className="flex justify-between items-baseline">
+              <span className="text-[15px] font-semibold text-foreground/90">Estimated subtotal</span>
               <span
-                className="font-semibold tabular-nums"
+                className="font-bold tabular-nums text-lg"
                 data-testid="text-subtotal"
               >
                 {formatPrice(subtotalCents)}
               </span>
             </div>
-            <div className="text-[11px] text-muted-foreground mt-1">
+            <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">
               Includes the configured service markup. Final total may include a
               service or delivery fee set in store settings, plus tip.
             </div>
@@ -165,7 +167,7 @@ export default function Cart() {
 
           <StickyFooter>
             <Button
-              className="ember-button w-full h-12 font-semibold"
+              className="ember-button w-full h-14 text-base font-bold rounded-2xl"
               onClick={startCheckout}
               data-testid="button-checkout"
             >

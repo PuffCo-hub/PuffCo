@@ -30,28 +30,28 @@ export function Shell({ children, title, back, showCart = true }: Props) {
         <div className="absolute inset-0 bg-gradient-to-b from-background/20 via-background/35 to-background/62" />
         <div className="absolute inset-0 bg-[radial-gradient(90%_60%_at_50%_20%,transparent,hsl(var(--background)/0.32)_78%)]" />
       </div>
-      <header className="sticky top-0 z-30 backdrop-blur-md bg-background/78 border-b border-border">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3 min-w-0">
+      <header className="app-header sticky top-0 z-30 backdrop-blur-md bg-background/82 border-b border-border">
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 min-h-[56px]">
+          <div className="flex items-center gap-2 min-w-0">
             {back ? (
               <button
                 onClick={() => navigate(back)}
-                className="rounded-full p-2 hover-elevate -ml-2"
+                className="rounded-full p-2.5 hover-elevate -ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
                 aria-label="Back"
                 data-testid="button-back"
               >
-                <ChevronLeft className="size-5" />
+                <ChevronLeft className="size-6" />
               </button>
             ) : (
               <Link href="/menu" data-testid="link-home-logo">
-                <span className="block">
-                  <SmokeWordmark size={36} />
+                <span className="block py-1">
+                  <SmokeWordmark size={44} />
                 </span>
               </Link>
             )}
             {title ? (
               <h1
-                className="font-semibold tracking-tight text-base truncate"
+                className="font-semibold tracking-tight text-lg truncate"
                 data-testid="text-page-title"
               >
                 {title}
@@ -61,14 +61,14 @@ export function Shell({ children, title, back, showCart = true }: Props) {
           {showCart && (
             <Link href="/cart">
               <button
-                className="relative rounded-full p-2 hover-elevate"
+                className="relative rounded-full p-2.5 hover-elevate min-w-[44px] min-h-[44px] flex items-center justify-center"
                 aria-label="Open cart"
                 data-testid="button-open-cart"
               >
-                <ShoppingBag className="size-5" />
+                <ShoppingBag className="size-6" />
                 {cartCount > 0 && (
                   <span
-                    className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center"
+                    className="absolute top-0 right-0 min-w-[20px] h-[20px] px-1 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center ring-2 ring-background"
                     data-testid="badge-cart-count"
                   >
                     {cartCount}

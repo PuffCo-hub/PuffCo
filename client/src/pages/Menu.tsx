@@ -53,20 +53,20 @@ function ProductCard({ p, onOpen }: { p: Product; onOpen: (p: Product) => void }
     >
       <ProductImage product={p} />
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-0.5 font-semibold">
           {p.brand} · {p.subcategory}
         </div>
-        <div className="font-semibold text-sm leading-tight line-clamp-2" data-testid={`text-name-${p.id}`}>
+        <div className="font-semibold text-[15px] leading-tight line-clamp-2" data-testid={`text-name-${p.id}`}>
           {p.orderName}
         </div>
-        <div className="text-[11px] text-muted-foreground leading-snug mt-1 line-clamp-2">
+        <div className="text-[12px] text-muted-foreground leading-snug mt-1 line-clamp-2">
           {p.detail}
         </div>
-        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
-          <span className="font-semibold text-foreground tabular-nums" data-testid={`text-price-${p.id}`}>
+        <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1.5 flex-wrap">
+          <span className="font-bold text-foreground tabular-nums text-[15px]" data-testid={`text-price-${p.id}`}>
             {formatPrice(est)}
           </span>
-          <span className="opacity-60">est.</span>
+          <span className="opacity-70 text-[11px]">est.</span>
           {unavailable ? (
             <span
               className="px-1.5 py-0.5 rounded-full bg-destructive/15 text-destructive text-[10px] font-semibold"
@@ -83,13 +83,13 @@ function ProductCard({ p, onOpen }: { p: Product; onOpen: (p: Product) => void }
       </div>
       <Button
         size="sm"
-        className="ember-button h-9 w-9 p-0 shrink-0"
+        className="ember-button h-11 w-11 p-0 shrink-0 rounded-full"
         onClick={handleAdd}
         disabled={unavailable || busy}
         data-testid={`button-add-${p.id}`}
         aria-label={unavailable ? `${p.name} is out of stock` : `Add ${p.name}`}
       >
-        <Plus className="size-4" />
+        <Plus className="size-5" />
       </Button>
     </div>
   );
@@ -375,7 +375,7 @@ export default function Menu() {
         </section>
       ) : null}
 
-      <div className="sticky top-[61px] z-20 -mx-4 px-4 pb-3 pt-1 bg-background/92 backdrop-blur-md border-b border-border/50 mb-4">
+      <div className="sticky z-20 -mx-4 px-4 pb-3 pt-1 bg-background/92 backdrop-blur-md border-b border-border/50 mb-4" style={{ top: "calc(64px + env(safe-area-inset-top))" }}>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
@@ -460,11 +460,11 @@ export default function Menu() {
                   Hot
                 </div>
               </div>
-              <div className="mt-2 text-[10px] uppercase tracking-wider text-muted-foreground">{p.brand}</div>
-              <div className="font-semibold text-sm leading-tight line-clamp-2 min-h-[2.3rem]">{p.orderName}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground line-clamp-1">{p.detail}</div>
+              <div className="mt-2 text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{p.brand}</div>
+              <div className="font-semibold text-[15px] leading-tight line-clamp-2 min-h-[2.3rem]">{p.orderName}</div>
+              <div className="mt-1 text-[12px] text-muted-foreground line-clamp-1">{p.detail}</div>
               <div className="mt-2 flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold tabular-nums">{formatPrice(applyMarkup(p.basePriceCents))}</span>
+                <span className="text-[15px] font-bold tabular-nums">{formatPrice(applyMarkup(p.basePriceCents))}</span>
                 <Button
                   size="sm"
                   className="ember-button h-8 px-2"
