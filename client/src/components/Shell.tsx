@@ -25,10 +25,10 @@ export function Shell({ children, title, back, showCart = true }: Props) {
         <img
           src={neonDeliveryBg}
           alt=""
-          className="h-full w-full object-cover opacity-[0.48] animate-[slow-pan_22s_ease-in-out_infinite_alternate]"
+          className="h-full w-full object-cover object-[center_center] opacity-[0.78] animate-[slow-pan_22s_ease-in-out_infinite_alternate]"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/45 via-background/58 to-background/78" />
-        <div className="absolute inset-0 bg-[radial-gradient(90%_60%_at_50%_20%,transparent,hsl(var(--background)/0.54)_72%)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/20 via-background/35 to-background/62" />
+        <div className="absolute inset-0 bg-[radial-gradient(90%_60%_at_50%_20%,transparent,hsl(var(--background)/0.32)_78%)]" />
       </div>
       <header className="sticky top-0 z-30 backdrop-blur-md bg-background/78 border-b border-border">
         <div className="flex items-center justify-between px-4 py-3">

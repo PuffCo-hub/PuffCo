@@ -16,9 +16,9 @@ export default function AgeGate() {
         <img
           src={neonDeliveryBg}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover opacity-70 animate-[slow-pan_18s_ease-in-out_infinite_alternate]"
+          className="absolute inset-0 h-full w-full object-cover object-[center_center] opacity-[0.88] animate-[slow-pan_18s_ease-in-out_infinite_alternate]"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/28 via-background/54 to-background/82" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/12 via-background/38 to-background/72" />
         <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_-10%,hsl(145_80%_45%/0.18),transparent_55%),radial-gradient(120%_80%_at_50%_110%,hsl(145_60%_35%/0.16),transparent_60%)]" />
         <div className="absolute -top-32 -left-16 size-[420px] rounded-full bg-primary/10 blur-[120px]" />
         <div className="absolute -bottom-32 -right-12 size-[380px] rounded-full bg-emerald-500/15 blur-[120px]" />
