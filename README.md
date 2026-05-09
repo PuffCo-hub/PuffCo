@@ -35,6 +35,8 @@ Change this before real launch.
 - Substitution system
 - Pricing settings
 - Vendor and location structure
+- Shop-by-shop browsing with per-shop service and delivery fees
+- Single-shop carts to keep delivery operations simple
 - Audit logs
 
 ## Recommended launch path
@@ -79,6 +81,23 @@ Optional for SMS (Twilio):
 6. Place a test order to confirm the drivers receive a text and the customer gets a confirmation text.
 
 If any of the Twilio variables are missing, the app keeps working normally — it simply skips sending real text messages and records that the SMS step was skipped in the audit log. No SMS secrets are ever stored in the database or in the admin UI.
+
+## Why the live site sometimes takes a minute to load (Render free tier)
+
+If the customer link sits idle for about 15 minutes, Render's free hosting tier puts the service to sleep. The very next visitor wakes it up, and that wake-up can take roughly 30 to 60 seconds. After that the site responds quickly again until the next idle period.
+
+In plain English:
+
+- **What it looks like to a customer:** the menu may seem slow or stuck the first time someone opens it after a quiet stretch.
+- **Why it happens:** the free Render plan trades cost for an "auto sleep" rule.
+- **The real fix:** upgrade the Render web service to a paid plan that does not sleep. This is a Render dashboard setting and does not require any code changes.
+
+If you want to stay on the free tier for now, two things help:
+
+1. **Health check path.** Open the Render dashboard, click the PuffGo service, click **Settings**, find **Health Check Path**, and set it to `/health`. The app already exposes that endpoint and returns a small JSON response. Render will use this to verify the service is alive after a cold start.
+2. **Optional uptime ping.** Use any free uptime monitor (UptimeRobot, BetterStack, etc.) and set it to ping `https://your-domain.com/health` every 5 to 10 minutes. This keeps the service warm so customers rarely hit a cold start. **Do not ping more often than every minute** — Render will throttle you and it does not improve the experience.
+
+The customer-facing menu also shows a clearer loading state with image and price skeletons so a slow first paint is never blank.
 
 ## Local development
 

@@ -24,6 +24,7 @@ export default function Tip() {
     tipCents,
     setTipCents,
     setLastOrderId,
+    cartShopId,
   } = useCart();
   const [, navigate] = useLocation();
   const [custom, setCustom] = useState("");
@@ -61,6 +62,7 @@ export default function Tip() {
         state: address.state.toUpperCase(),
         zip: address.zip,
         notes: address.notes ?? null,
+        shopId: cartShopId || "default",
       });
       const order = await res.json();
       setLastOrderId(order.id);

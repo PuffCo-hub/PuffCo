@@ -103,6 +103,22 @@ function publicProduct(p: any) {
     substituteIds,
     vendorId: p.vendorId,
     locationId: p.locationId,
+    shopId: p.shopId || "default",
+  };
+}
+
+function publicShop(s: any) {
+  return {
+    id: s.id,
+    name: s.name,
+    blurb: s.blurb,
+    serviceArea: s.serviceArea,
+    active: !!s.active,
+    open: !!s.open,
+    serviceFeeCents: s.serviceFeeCents,
+    deliveryFeeCents: s.deliveryFeeCents,
+    imageUrl: s.imageUrl,
+    accent: s.accent,
   };
 }
 
@@ -112,6 +128,18 @@ export async function registerRoutes(
 ): Promise<Server> {
   // Kick off background timeout sweeper (process-wide, idempotent).
   startSweeper();
+
+  // Lightweight health/readiness endpoint. No auth, no DB writes — used by
+  // Render's health check path (set this to /health in the Render dashboard)
+  // and by simple uptime pingers that keep the free-tier instance warm.
+  app.get("/health", (_req, res) => {
+    res.json({
+      ok: true,
+      status: "ready",
+      version: process.env.npm_package_version || "1.0.0",
+      time: new Date().toISOString(),
+    });
+  });
 
   // ----------- Orders -----------
   app.get("/api/orders", async (_req, res) => {
@@ -177,13 +205,28 @@ export async function registerRoutes(
       (await storage.getSetting<PricingSettings>("pricing")) || DEFAULT_PRICING;
     const breakdown = computePricing(parsed.data.subtotal, parsed.data.tipCents, pricing);
 
+    // Shop-level service/delivery fees apply additively in service_fee mode.
+    // In revenue_split mode the customer-facing total is unchanged so we only
+    // add shop fees to the recorded fee for reporting consistency.
+    let shopFeeCents = 0;
+    const shopId = (parsed.data as any).shopId || "default";
+    const shop = await storage.getShop(shopId);
+    if (shop) {
+      shopFeeCents = (shop.serviceFeeCents || 0) + (shop.deliveryFeeCents || 0);
+    }
+    const finalFeeCents = breakdown.feeCents + shopFeeCents;
+    const finalTotalCents =
+      pricing.mode === "service_fee"
+        ? breakdown.totalCents + shopFeeCents
+        : breakdown.totalCents;
+
     for (const it of items) {
       await storage.adjustStock(it.id, -it.qty);
     }
 
     const order = await storage.createOrder(parsed.data, {
-      feeCents: breakdown.feeCents,
-      totalCents: breakdown.totalCents,
+      feeCents: finalFeeCents,
+      totalCents: finalTotalCents,
     });
 
     await storage.appendAudit("order.created", String(order.id), {
@@ -402,8 +445,76 @@ export async function registerRoutes(
   // ----------- Products -----------
   app.get("/api/products", async (req, res) => {
     const includeInactive = req.query.all === "true";
-    const all = await storage.listProducts(includeInactive);
+    const shopId = typeof req.query.shopId === "string" && req.query.shopId
+      ? String(req.query.shopId)
+      : undefined;
+    const all = await storage.listProducts(includeInactive, shopId ? { shopId } : undefined);
     res.json(all.map(publicProduct));
+  });
+
+  // ----------- Shops -----------
+  // Public — returns active shops only with safe fields.
+  app.get("/api/shops", async (_req, res) => {
+    const all = await storage.listShops(false);
+    res.json(all.map(publicShop));
+  });
+  app.get("/api/shops/:id", async (req, res) => {
+    const s = await storage.getShop(req.params.id);
+    if (!s || !s.active) return res.status(404).json({ error: "not found" });
+    res.json(publicShop(s));
+  });
+  // Admin shop CRUD.
+  app.get("/api/admin/shops", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json(await storage.listShops(true));
+  });
+  app.post("/api/admin/shops", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const schema = z.object({
+      id: z.string().min(1).optional(),
+      name: z.string().min(1),
+      blurb: z.string().max(500).optional(),
+      serviceArea: z.string().max(200).optional(),
+      notes: z.string().max(1000).optional(),
+      active: z.boolean().optional(),
+      open: z.boolean().optional(),
+      serviceFeeCents: z.number().int().min(0).optional(),
+      deliveryFeeCents: z.number().int().min(0).optional(),
+      imageUrl: z.string().max(2048).optional(),
+      accent: z.string().max(32).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const id = parsed.data.id || slugify(parsed.data.name) || `shop-${Date.now().toString(36)}`;
+    const exists = await storage.getShop(id);
+    if (exists) return res.status(409).json({ error: "shop id already exists" });
+    const s = await storage.createShop({ ...parsed.data, id });
+    await storage.appendAudit("shop.created", id, { name: s.name });
+    res.json(s);
+  });
+  app.patch("/api/admin/shops/:id", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const schema = z.object({
+      name: z.string().min(1).optional(),
+      blurb: z.string().max(500).optional(),
+      serviceArea: z.string().max(200).optional(),
+      notes: z.string().max(1000).optional(),
+      active: z.boolean().optional(),
+      open: z.boolean().optional(),
+      serviceFeeCents: z.number().int().min(0).optional(),
+      deliveryFeeCents: z.number().int().min(0).optional(),
+      imageUrl: z.string().max(2048).optional(),
+      accent: z.string().max(32).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const before = await storage.getShop(req.params.id);
+    if (!before) return res.status(404).json({ error: "not found" });
+    const updated = await storage.updateShop(req.params.id, parsed.data as any);
+    await storage.appendAudit("shop.updated", req.params.id, {
+      keys: Object.keys(parsed.data),
+    });
+    res.json(updated);
   });
 
   app.post("/api/products", async (req, res) => {

@@ -9,6 +9,19 @@ export type Product = DbProduct & {
   lowStock: boolean;
 };
 
+export type Shop = {
+  id: string;
+  name: string;
+  blurb: string;
+  serviceArea: string;
+  active: boolean;
+  open: boolean;
+  serviceFeeCents: number;
+  deliveryFeeCents: number;
+  imageUrl: string;
+  accent: string;
+};
+
 export type CategoryId = "vapes" | "carts" | "glass" | "papers" | "wraps" | "accessories";
 
 export const CATEGORY_OPTIONS: {

@@ -46,6 +46,13 @@ type Ctx = {
   // Order placement (prototype-only, in-memory)
   lastOrderId: number | null;
   setLastOrderId: (n: number) => void;
+
+  // Selected local shop for the current browsing session. null means "browse
+  // everything." Cart is restricted to a single shop; switching shops while
+  // the cart has items prompts the customer to clear it first.
+  selectedShopId: string | null;
+  setSelectedShopId: (id: string | null) => void;
+  cartShopId: string | null;
 };
 
 const CartContext = createContext<Ctx | null>(null);
@@ -73,6 +80,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<Address | null>(null);
   const [tipCents, setTipCents] = useState(0);
   const [lastOrderId, setLastOrderId] = useState<number | null>(null);
+  const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
+
+  // Cart is single-shop. Derive the cart's shop from the first line so the UI
+  // can warn before the customer adds something from a second shop.
+  const cartShopId = lines.length > 0 ? ((lines[0].product as any).shopId || null) : null;
 
   const subtotalCents = useMemo(
     () =>
@@ -90,6 +102,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = useCallback(
     (p: Product, qty = 1) => {
+      // Prevent mixed-shop carts. If the customer tries to add from a
+      // different shop, surface a clear toast and keep the existing cart.
+      const newShopId = (p as any).shopId || null;
+      if (lines.length > 0 && cartShopId && newShopId && newShopId !== cartShopId) {
+        toast({
+          title: "Different shop",
+          description:
+            "Your cart already has items from another shop. Finish or clear that order before adding from a new shop.",
+          duration: 3500,
+        });
+        return;
+      }
       let nextQty = qty;
       setLines((prev) => {
         const idx = prev.findIndex((l) => l.product.id === p.id);
@@ -120,7 +144,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       });
       lastToastIdRef.current = t.id;
     },
-    [toast, dismiss, navigate]
+    [toast, dismiss, navigate, lines.length, cartShopId]
   );
   const removeItem = (id: string) =>
     setLines((prev) => prev.filter((l) => l.product.id !== id));
@@ -171,6 +195,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         totalCents,
         lastOrderId,
         setLastOrderId,
+        selectedShopId,
+        setSelectedShopId,
+        cartShopId,
       }}
     >
       {children}

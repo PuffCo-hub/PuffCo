@@ -8,6 +8,7 @@ import {
   auditLog,
   vendors,
   locations,
+  shops,
 } from "@shared/schema";
 import type {
   Order,
@@ -19,6 +20,7 @@ import type {
   AuditLog,
   Vendor,
   Location,
+  Shop,
   PricingSettings,
   OrderSettings,
   NotificationSettings,
@@ -120,6 +122,20 @@ sqlite.exec(`
     active INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS shops (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    blurb TEXT NOT NULL DEFAULT '',
+    service_area TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    open INTEGER NOT NULL DEFAULT 1,
+    service_fee_cents INTEGER NOT NULL DEFAULT 0,
+    delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
+    image_url TEXT NOT NULL DEFAULT '',
+    accent TEXT NOT NULL DEFAULT '#ff7a1a',
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // Lightweight in-place migrations for pre-existing databases. Each ALTER is
@@ -142,6 +158,8 @@ function tryAlter(sql: string) {
   "ALTER TABLE products ADD COLUMN substitute_ids TEXT NOT NULL DEFAULT '[]'",
   "ALTER TABLE products ADD COLUMN vendor_id TEXT NOT NULL DEFAULT 'default'",
   "ALTER TABLE products ADD COLUMN location_id TEXT NOT NULL DEFAULT 'default'",
+  "ALTER TABLE products ADD COLUMN shop_id TEXT NOT NULL DEFAULT 'default'",
+  "ALTER TABLE orders ADD COLUMN shop_id TEXT NOT NULL DEFAULT 'default'",
   "ALTER TABLE orders ADD COLUMN fee_cents INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE orders ADD COLUMN acknowledged INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE orders ADD COLUMN acknowledged_at INTEGER",
@@ -280,6 +298,41 @@ function seedVendorAndLocationIfEmpty() {
       })
       .run();
   }
+}
+
+function seedShopsIfEmpty() {
+  const now = Date.now();
+  const s = db.select({ value: count() }).from(shops).get();
+  if ((s?.value ?? 0) === 0) {
+    db.insert(shops)
+      .values({
+        id: "default",
+        name: "PuffGo Pasco",
+        blurb: "Local smoke shop delivery across Pasco County.",
+        serviceArea: "Pasco County",
+        notes: "Outside Pasco may require a larger tip.",
+        active: true,
+        open: true,
+        serviceFeeCents: 0,
+        deliveryFeeCents: 0,
+        imageUrl: "",
+        accent: "#ff7a1a",
+        createdAt: now,
+      })
+      .run();
+  }
+  // Backfill any product/order rows that were created before the shop_id
+  // column existed. Safe — only touches blank shop_id values.
+  try {
+    sqlite
+      .prepare("UPDATE products SET shop_id='default' WHERE shop_id='' OR shop_id IS NULL")
+      .run();
+  } catch {/* ignore */}
+  try {
+    sqlite
+      .prepare("UPDATE orders SET shop_id='default' WHERE shop_id='' OR shop_id IS NULL")
+      .run();
+  } catch {/* ignore */}
 }
 
 const DEFAULT_PRODUCTS: InsertProduct[] = [
@@ -485,6 +538,7 @@ function backfillStock() {
 
 seedProductsIfEmpty();
 seedVendorAndLocationIfEmpty();
+seedShopsIfEmpty();
 seedSettingsIfMissing();
 backfillStock();
 
@@ -507,7 +561,7 @@ export interface IStorage {
   createProductRequest(req: InsertProductRequest): Promise<ProductRequest>;
   listProductRequests(): Promise<ProductRequest[]>;
 
-  listProducts(includeInactive?: boolean): Promise<Product[]>;
+  listProducts(includeInactive?: boolean, filters?: { shopId?: string }): Promise<Product[]>;
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product | undefined>;
@@ -526,6 +580,11 @@ export interface IStorage {
   listLocations(): Promise<Location[]>;
   createVendor(v: { id: string; name: string; contact?: string }): Promise<Vendor>;
   createLocation(l: { id: string; name: string; address?: string }): Promise<Location>;
+
+  listShops(includeInactive?: boolean): Promise<Shop[]>;
+  getShop(id: string): Promise<Shop | undefined>;
+  createShop(s: Partial<Shop> & { id: string; name: string }): Promise<Shop>;
+  updateShop(id: string, patch: Partial<Shop>): Promise<Shop | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -648,20 +707,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Products ----------------------------------------------------------------
-  async listProducts(includeInactive = false): Promise<Product[]> {
-    if (includeInactive) {
-      return db
-        .select()
-        .from(products)
-        .orderBy(desc(products.popular), desc(products.updatedAt))
-        .all();
-    }
-    return db
-      .select()
-      .from(products)
-      .where(eq(products.active, true))
+  async listProducts(
+    includeInactive = false,
+    filters: { shopId?: string } = {},
+  ): Promise<Product[]> {
+    const conditions: any[] = [];
+    if (!includeInactive) conditions.push(eq(products.active, true));
+    if (filters.shopId) conditions.push(eq(products.shopId, filters.shopId));
+    const where =
+      conditions.length === 0
+        ? undefined
+        : conditions.length === 1
+          ? conditions[0]
+          : and(...conditions);
+    const q = db.select().from(products);
+    const rows = (where ? q.where(where) : q)
       .orderBy(desc(products.popular), desc(products.updatedAt))
       .all();
+    return rows;
   }
   async getProduct(id: string): Promise<Product | undefined> {
     return db.select().from(products).where(eq(products.id, id)).get();
@@ -805,6 +868,51 @@ export class DatabaseStorage implements IStorage {
         active: true,
         createdAt: Date.now(),
       })
+      .returning()
+      .get();
+  }
+
+  // Shops -------------------------------------------------------------------
+  async listShops(includeInactive = false): Promise<Shop[]> {
+    if (includeInactive) {
+      return db.select().from(shops).orderBy(desc(shops.createdAt)).all();
+    }
+    return db
+      .select()
+      .from(shops)
+      .where(eq(shops.active, true))
+      .orderBy(desc(shops.createdAt))
+      .all();
+  }
+  async getShop(id: string): Promise<Shop | undefined> {
+    return db.select().from(shops).where(eq(shops.id, id)).get();
+  }
+  async createShop(input: Partial<Shop> & { id: string; name: string }): Promise<Shop> {
+    const now = Date.now();
+    return db
+      .insert(shops)
+      .values({
+        id: input.id,
+        name: input.name,
+        blurb: input.blurb ?? "",
+        serviceArea: input.serviceArea ?? "",
+        notes: input.notes ?? "",
+        active: input.active ?? true,
+        open: input.open ?? true,
+        serviceFeeCents: input.serviceFeeCents ?? 0,
+        deliveryFeeCents: input.deliveryFeeCents ?? 0,
+        imageUrl: input.imageUrl ?? "",
+        accent: input.accent ?? "#ff7a1a",
+        createdAt: now,
+      } as any)
+      .returning()
+      .get();
+  }
+  async updateShop(id: string, patch: Partial<Shop>): Promise<Shop | undefined> {
+    return db
+      .update(shops)
+      .set(patch as any)
+      .where(eq(shops.id, id))
       .returning()
       .get();
   }

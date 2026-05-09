@@ -70,6 +70,7 @@ type ProductForm = {
   substituteIds: string; // comma-separated
   vendorId: string;
   locationId: string;
+  shopId: string;
 };
 
 const blankForm: ProductForm = {
@@ -91,6 +92,7 @@ const blankForm: ProductForm = {
   substituteIds: "",
   vendorId: "default",
   locationId: "default",
+  shopId: "default",
 };
 
 function centsFromPrice(value: string) {
@@ -126,6 +128,7 @@ function formFromProduct(p: Product): ProductForm {
     substituteIds: subs.join(", "),
     vendorId: (p as any).vendorId || "default",
     locationId: (p as any).locationId || "default",
+    shopId: (p as any).shopId || "default",
   };
 }
 
@@ -154,6 +157,7 @@ function payloadFromForm(form: ProductForm) {
     substituteIds: subs,
     vendorId: form.vendorId || "default",
     locationId: form.locationId || "default",
+    shopId: form.shopId || "default",
   };
 }
 
@@ -251,6 +255,14 @@ export default function Admin() {
     enabled: authed,
     queryFn: async () => {
       const res = await adminRequest(pin, "GET", "/api/admin/locations");
+      return res.json();
+    },
+  });
+  const { data: adminShops = [] } = useQuery<ShopRow[]>({
+    queryKey: ["/api/admin/shops"],
+    enabled: authed,
+    queryFn: async () => {
+      const res = await adminRequest(pin, "GET", "/api/admin/shops");
       return res.json();
     },
   });
@@ -539,12 +551,12 @@ export default function Admin() {
         <TabButton active={tab === "writeins"} onClick={() => setTab("writeins")}>Write-ins</TabButton>
         <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>Settings</TabButton>
         <TabButton active={tab === "audit"} onClick={() => setTab("audit")}>Audit</TabButton>
-        <TabButton active={tab === "vendors"} onClick={() => setTab("vendors")}>Vendors</TabButton>
+        <TabButton active={tab === "vendors"} onClick={() => setTab("vendors")}>Shops</TabButton>
       </div>
 
       {tab === "products" && authed ? (
         <>
-          <ProductEditor form={form} setForm={setForm} onSave={() => saveProduct.mutate()} saving={saveProduct.isPending} error={saveProduct.error?.message} vendors={vendors} locations={locations} />
+          <ProductEditor form={form} setForm={setForm} onSave={() => saveProduct.mutate()} saving={saveProduct.isPending} error={saveProduct.error?.message} vendors={vendors} locations={locations} shops={adminShops} />
           <Section title="Current product list">
             {products.length === 0 ? (
               <Empty text="No products yet." />
@@ -960,9 +972,12 @@ export default function Admin() {
       ) : null}
 
       {tab === "vendors" && authed ? (
-        <VendorsPanel pin={pin} vendors={vendors} locations={locations} />
+        <>
+          <ShopsPanel pin={pin} />
+          <VendorsPanel pin={pin} vendors={vendors} locations={locations} />
+        </>
       ) : tab === "vendors" ? (
-        <Empty text="Enter the admin PIN above to manage vendors and locations." />
+        <Empty text="Enter the admin PIN above to manage shops, vendors, and locations." />
       ) : null}
     </Shell>
   );
@@ -990,6 +1005,7 @@ function ProductEditor({
   error,
   vendors,
   locations,
+  shops,
 }: {
   form: ProductForm;
   setForm: React.Dispatch<React.SetStateAction<ProductForm>>;
@@ -998,6 +1014,7 @@ function ProductEditor({
   error?: string;
   vendors: Vendor[];
   locations: Location[];
+  shops: ShopRow[];
 }) {
   const set = (key: keyof ProductForm, value: string | boolean) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -1077,6 +1094,19 @@ function ProductEditor({
           />
         </Field>
         <div className="grid grid-cols-2 gap-2">
+          <Field label="Shop" hint="Which local shop carries this item">
+            <select className="h-10 rounded-md bg-background border border-input px-3 text-sm" value={form.shopId} onChange={(e) => set("shopId", e.target.value)} data-testid="select-shop">
+              {shops.length === 0 ? (
+                <option value="default">PuffGo Pasco</option>
+              ) : (
+                shops.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </Field>
           <Field label="Vendor">
             <select className="h-10 rounded-md bg-background border border-input px-3 text-sm" value={form.vendorId} onChange={(e) => set("vendorId", e.target.value)} data-testid="select-vendor">
               {vendors.length === 0 ? <option value="default">PuffGo Default</option> : vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -1416,6 +1446,177 @@ function SettingsPanel({
         <SettingsIcon className="size-4 mr-2" />
         {saving ? "Saving…" : "Save settings"}
       </Button>
+    </div>
+  );
+}
+
+type ShopRow = {
+  id: string;
+  name: string;
+  blurb: string;
+  serviceArea: string;
+  notes: string;
+  active: boolean;
+  open: boolean;
+  serviceFeeCents: number;
+  deliveryFeeCents: number;
+  imageUrl: string;
+  accent: string;
+};
+
+function ShopsPanel({ pin }: { pin: string }) {
+  const { data: shops = [] } = useQuery<ShopRow[]>({
+    queryKey: ["/api/admin/shops"],
+    queryFn: async () => {
+      const res = await adminRequest(pin, "GET", "/api/admin/shops");
+      return res.json();
+    },
+  });
+  const blank = {
+    id: "",
+    name: "",
+    blurb: "",
+    serviceArea: "",
+    serviceFeeCents: "",
+    deliveryFeeCents: "",
+  };
+  const [sForm, setSForm] = useState(blank);
+  const addShop = useMutation({
+    mutationFn: async () => {
+      await adminRequest(pin, "POST", "/api/admin/shops", {
+        id: sForm.id || undefined,
+        name: sForm.name,
+        blurb: sForm.blurb,
+        serviceArea: sForm.serviceArea,
+        serviceFeeCents: Math.max(0, Math.round(Number(sForm.serviceFeeCents) || 0)),
+        deliveryFeeCents: Math.max(0, Math.round(Number(sForm.deliveryFeeCents) || 0)),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/shops"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shops"] });
+      setSForm(blank);
+    },
+  });
+  const toggleShop = useMutation({
+    mutationFn: async (args: { id: string; patch: Partial<ShopRow> }) => {
+      await adminRequest(pin, "PATCH", `/api/admin/shops/${args.id}`, args.patch);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/shops"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shops"] });
+    },
+  });
+
+  return (
+    <div className="space-y-5">
+      <Section title="Shops">
+        <p className="text-xs text-muted-foreground mb-2">
+          Customer-facing local shops. Each shop has its own service fee and
+          delivery fee — those add to the order total when a shop is selected.
+        </p>
+        <div className="space-y-2 mb-3">
+          {shops.map((s) => (
+            <div
+              key={s.id}
+              className="bg-card border border-card-border rounded-2xl p-3"
+              data-testid={`row-shop-${s.id}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm">{s.name}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">{s.id}</div>
+                  {s.serviceArea ? (
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {s.serviceArea}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex flex-col items-end gap-1 text-[11px]">
+                  <div>
+                    Service fee:{" "}
+                    <span className="font-semibold tabular-nums">
+                      {formatPrice(s.serviceFeeCents || 0)}
+                    </span>
+                  </div>
+                  <div>
+                    Delivery fee:{" "}
+                    <span className="font-semibold tabular-nums">
+                      {formatPrice(s.deliveryFeeCents || 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-2">
+                <Toggle
+                  checked={!!s.active}
+                  onClick={() =>
+                    toggleShop.mutate({ id: s.id, patch: { active: !s.active } })
+                  }
+                  label="Active"
+                  testid={`toggle-shop-active-${s.id}`}
+                />
+                <Toggle
+                  checked={!!s.open}
+                  onClick={() =>
+                    toggleShop.mutate({ id: s.id, patch: { open: !s.open } })
+                  }
+                  label="Open"
+                  testid={`toggle-shop-open-${s.id}`}
+                />
+              </div>
+            </div>
+          ))}
+          {shops.length === 0 ? <Empty text="No shops yet." /> : null}
+        </div>
+        <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              placeholder="shop-id (optional)"
+              value={sForm.id}
+              onChange={(e) => setSForm({ ...sForm, id: e.target.value })}
+              data-testid="input-shop-id"
+            />
+            <Input
+              placeholder="Shop name"
+              value={sForm.name}
+              onChange={(e) => setSForm({ ...sForm, name: e.target.value })}
+              data-testid="input-shop-name"
+            />
+            <Input
+              placeholder="Service area"
+              value={sForm.serviceArea}
+              onChange={(e) => setSForm({ ...sForm, serviceArea: e.target.value })}
+              data-testid="input-shop-area"
+            />
+            <Input
+              placeholder="Blurb"
+              value={sForm.blurb}
+              onChange={(e) => setSForm({ ...sForm, blurb: e.target.value })}
+              data-testid="input-shop-blurb"
+            />
+            <Input
+              placeholder="Service fee (cents)"
+              value={sForm.serviceFeeCents}
+              onChange={(e) => setSForm({ ...sForm, serviceFeeCents: e.target.value })}
+              data-testid="input-shop-service-fee"
+            />
+            <Input
+              placeholder="Delivery fee (cents)"
+              value={sForm.deliveryFeeCents}
+              onChange={(e) => setSForm({ ...sForm, deliveryFeeCents: e.target.value })}
+              data-testid="input-shop-delivery-fee"
+            />
+          </div>
+          <Button
+            onClick={() => addShop.mutate()}
+            disabled={addShop.isPending || !sForm.name}
+            data-testid="button-add-shop"
+          >
+            <Building2 className="size-4 mr-2" /> Add shop
+          </Button>
+        </div>
+      </Section>
     </div>
   );
 }

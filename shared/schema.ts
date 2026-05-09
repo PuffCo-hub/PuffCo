@@ -53,6 +53,8 @@ export const orders = sqliteTable("orders", {
   // so a single store works without configuration.
   vendorId: text("vendor_id").notNull().default("default"),
   locationId: text("location_id").notNull().default("default"),
+  // Customer-facing local shop association.
+  shopId: text("shop_id").notNull().default("default"),
 });
 
 export const insertOrderSchema = createInsertSchema(orders).omit({
@@ -130,6 +132,10 @@ export const products = sqliteTable("products", {
   // single-store deployment keeps working with no configuration.
   vendorId: text("vendor_id").notNull().default("default"),
   locationId: text("location_id").notNull().default("default"),
+  // Customer-facing "shop" — distinct from vendor in the UI. Existing rows
+  // are migrated onto a "default" shop on first boot so the catalog never
+  // disappears.
+  shopId: text("shop_id").notNull().default("default"),
 });
 
 export const insertProductSchema = createInsertSchema(products).omit({
@@ -153,6 +159,7 @@ export const productInputSchema = insertProductSchema.extend({
   substituteIds: z.string().default("[]"),
   vendorId: z.string().default("default"),
   locationId: z.string().default("default"),
+  shopId: z.string().default("default"),
 });
 
 export type InsertProduct = z.infer<typeof insertProductSchema>;
@@ -258,3 +265,22 @@ export const locations = sqliteTable("locations", {
   createdAt: integer("created_at").notNull(),
 });
 export type Location = typeof locations.$inferSelect;
+
+// Customer-facing "local shops". Internally maps onto the vendor concept but
+// presented as a shop in the UI. Each shop has its own fees and an optional
+// service area note. Always treat customer-facing prices as final/display.
+export const shops = sqliteTable("shops", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  blurb: text("blurb").notNull().default(""),
+  serviceArea: text("service_area").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  open: integer("open", { mode: "boolean" }).notNull().default(true),
+  serviceFeeCents: integer("service_fee_cents").notNull().default(0),
+  deliveryFeeCents: integer("delivery_fee_cents").notNull().default(0),
+  imageUrl: text("image_url").notNull().default(""),
+  accent: text("accent").notNull().default("#ff7a1a"),
+  createdAt: integer("created_at").notNull(),
+});
+export type Shop = typeof shops.$inferSelect;

@@ -6,9 +6,10 @@ import {
   formatPrice,
   type CategoryId,
   type Product,
+  type Shop,
 } from "@/lib/catalog";
 import { useCart } from "@/lib/cart-context";
-import { Search, Plus, Sparkles, ChevronRight, X, MapPin, SlidersHorizontal, Clock, Star } from "lucide-react";
+import { Search, Plus, Sparkles, ChevronRight, X, MapPin, SlidersHorizontal, Clock, Star, Store } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -129,17 +130,31 @@ function CategoryTile({
 }
 
 export default function Menu() {
-  const { addItem } = useCart();
+  const { addItem, selectedShopId, setSelectedShopId } = useCart();
   const [q, setQ] = useState("");
   const [activeCategory, setActiveCategory] = useState<CategoryId | null>(null);
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [trendingBusy, setTrendingBusy] = useState<string | null>(null);
+
+  const { data: shops = [] } = useQuery<Shop[]>({
+    queryKey: ["/api/shops"],
+    staleTime: 60_000,
+  });
+
+  const productsKey = selectedShopId
+    ? ["/api/products?shopId=" + encodeURIComponent(selectedShopId)]
+    : ["/api/products"];
   const { data: products = [], isLoading } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
+    queryKey: productsKey,
     // Re-fetch every 8s so stock changes show up without page refresh.
     refetchInterval: 8000,
   });
+
+  const activeShop = useMemo(
+    () => shops.find((s) => s.id === selectedShopId) || null,
+    [shops, selectedShopId],
+  );
 
   // Show popular items but only those still available; operators can still see
   // out-of-stock items in the admin list. Customer-side, the catalog hides
@@ -252,6 +267,102 @@ export default function Menu() {
 
       <InstallBanner />
 
+      {/* Active shop indicator — clear "shopping at" pill with a way to back out. */}
+      {activeShop ? (
+        <div
+          className="mb-4 rounded-2xl border border-primary/40 bg-primary/10 p-3 flex items-center gap-3"
+          data-testid="banner-active-shop"
+        >
+          <div className="size-9 rounded-xl bg-primary/20 flex items-center justify-center text-primary shrink-0">
+            <Store className="size-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-primary/80 font-semibold">
+              Shopping at
+            </div>
+            <div className="font-semibold text-sm truncate">{activeShop.name}</div>
+            {activeShop.serviceArea ? (
+              <div className="text-[11px] text-muted-foreground truncate">
+                {activeShop.serviceArea}
+              </div>
+            ) : null}
+          </div>
+          <button
+            onClick={() => {
+              setSelectedShopId(null);
+              setActiveCategory(null);
+              setActiveSubcategory(null);
+            }}
+            className="text-xs font-semibold text-primary hover-elevate rounded-full px-3 py-1.5 border border-primary/30"
+            data-testid="button-clear-shop"
+          >
+            Change shop
+          </button>
+        </div>
+      ) : null}
+
+      {/* "Shop by local shop" — second primary path, shown when no shop is selected. */}
+      {!activeShop && shops.length > 0 ? (
+        <section className="mb-6" data-testid="section-shops">
+          <div className="flex items-end justify-between gap-3 mb-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <Store className="size-4 text-primary" />
+                <h2 className="text-lg font-semibold tracking-tight">Shop by local shop</h2>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Pick a local shop to browse only its inventory.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            {shops.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => {
+                  setSelectedShopId(s.id);
+                  setActiveCategory(null);
+                  setActiveSubcategory(null);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="bg-card rounded-2xl p-3 flex gap-3 items-center w-full border border-card-border hover-elevate text-left"
+                data-testid={`card-shop-${s.id}`}
+              >
+                <div
+                  className="size-12 rounded-2xl flex items-center justify-center shrink-0"
+                  style={{ background: `${s.accent || "#ff7a1a"}22`, color: s.accent || "#ff7a1a" }}
+                >
+                  <Store className="size-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm leading-tight">{s.name}</div>
+                  {s.blurb ? (
+                    <div className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
+                      {s.blurb}
+                    </div>
+                  ) : null}
+                  <div className="text-[11px] text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
+                    {s.serviceArea ? (
+                      <span className="flex items-center gap-1"><MapPin className="size-3" />{s.serviceArea}</span>
+                    ) : null}
+                    {s.open ? (
+                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">
+                        Open
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-semibold">
+                        Closed
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div className="sticky top-[61px] z-20 -mx-4 px-4 pb-3 pt-1 bg-background/92 backdrop-blur-md border-b border-border/50 mb-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -297,9 +408,20 @@ export default function Menu() {
         </div>
         <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4">
           {isLoading ? (
-            <div className="bg-card rounded-3xl p-5 w-[178px] shrink-0 border border-card-border text-sm text-muted-foreground">
-              Loading products…
-            </div>
+            <>
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="bg-card rounded-3xl p-3 w-[178px] shrink-0 border border-card-border animate-pulse"
+                  data-testid={`skeleton-trending-${i}`}
+                >
+                  <div className="aspect-square rounded-2xl bg-muted/40" />
+                  <div className="mt-3 h-3 rounded bg-muted/40 w-1/3" />
+                  <div className="mt-2 h-4 rounded bg-muted/40 w-5/6" />
+                  <div className="mt-2 h-3 rounded bg-muted/40 w-2/3" />
+                </div>
+              ))}
+            </>
           ) : popular.length === 0 ? (
             <div className="bg-card rounded-3xl p-5 w-full border border-card-border text-sm text-muted-foreground">
               No trending products yet. Add products from Admin and mark them trending.
@@ -357,7 +479,7 @@ export default function Menu() {
 
       <section className="mb-5">
         <h3 className="text-base font-semibold mb-2">
-          Shop by category
+          {activeShop ? `Browse ${activeShop.name} by item type` : "Browse by item type"}
         </h3>
         <div className="grid gap-2">
           {CATEGORY_OPTIONS.map((c) => (
