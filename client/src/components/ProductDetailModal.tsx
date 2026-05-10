@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Plus, Minus, Check, ShoppingBag } from "lucide-react";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { ProductImage } from "./ProductImage";
 import { useCart } from "@/lib/cart-context";
 import { applyMarkup, formatPrice, type Product } from "@/lib/catalog";
@@ -32,6 +32,7 @@ function extractFacts(detail: string): { label: string; value: string }[] {
 
 export function ProductDetailModal({ product, open, onOpenChange }: Props) {
   const { addItem, lines } = useCart();
+  const [, navigate] = useLocation();
   const [qty, setQty] = useState(1);
   const [justAdded, setJustAdded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -219,17 +220,18 @@ export function ProductDetailModal({ product, open, onOpenChange }: Props) {
               )}
             </Button>
             {inCart > 0 ? (
-              <Link href="/cart">
-                <Button
-                  variant="outline"
-                  className="h-11 w-full"
-                  onClick={() => onOpenChange(false)}
-                  data-testid="button-modal-view-cart"
-                >
-                  <ShoppingBag className="size-4 mr-2" />
-                  View cart ({inCart} of this in cart)
-                </Button>
-              </Link>
+              <Button
+                variant="outline"
+                className="h-11 w-full"
+                onClick={() => {
+                  onOpenChange(false);
+                  navigate("/cart");
+                }}
+                data-testid="button-modal-view-cart"
+              >
+                <ShoppingBag className="size-4 mr-2" />
+                View cart ({inCart} of this in cart)
+              </Button>
             ) : null}
           </div>
         </div>
