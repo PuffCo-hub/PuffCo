@@ -8,14 +8,14 @@ import { formatPrice } from "@/lib/catalog";
 import type { Order } from "@shared/schema";
 import { SUPPORT_PHONE } from "@/lib/config";
 
-function PaymentBadge({ status }: { status?: string }) {
+function PaymentBadge({ status, cashtagSent }: { status?: string; cashtagSent?: boolean }) {
   const map: Record<string, { label: string; cls: string }> = {
     pending_payment: {
-      label: "Awaiting payment",
+      label: cashtagSent ? "Payment pending review" : "Awaiting payment",
       cls: "bg-amber-500/15 text-amber-300 border-amber-500/30",
     },
     paid: {
-      label: "Payment received",
+      label: "Payment confirmed",
       cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
     },
     refund_due: {
@@ -42,9 +42,10 @@ function PaymentBadge({ status }: { status?: string }) {
   );
 }
 
-const STATUS_STEPS: { key: Order["status"]; label: string; icon: any }[] = [
+type ProgressStep = { key: string; label: string; icon: any };
+const PROGRESS_STEPS: ProgressStep[] = [
   { key: "placed", label: "Order placed", icon: CheckCircle2 },
-  { key: "pay_pending", label: "Payment received", icon: CheckCircle2 },
+  { key: "payment_confirmed", label: "Payment confirmed by operator", icon: CheckCircle2 },
   { key: "confirmed", label: "Driver assigned", icon: Truck },
   { key: "en_route", label: "En route", icon: MapPin },
   { key: "delivered", label: "Delivered", icon: IdCard },
@@ -80,9 +81,19 @@ export default function Confirm() {
     );
   }
 
-  const currentIdx = STATUS_STEPS.findIndex(
-    (s) => s.key === (order?.status ?? "pay_pending")
-  );
+  // Drive the progress steps from actual state. "Payment confirmed" must only
+  // light up when the admin has set paymentStatus to "paid" — never just
+  // because the customer tapped "I sent it" (which only sets fulfillment
+  // status to pay_pending).
+  const fulfillment = order?.status ?? "placed";
+  const paid = order?.paymentStatus === "paid";
+  const stepDone: Record<string, boolean> = {
+    placed: !!order,
+    payment_confirmed: paid,
+    confirmed: paid && ["confirmed", "en_route", "delivered"].includes(fulfillment),
+    en_route: ["en_route", "delivered"].includes(fulfillment),
+    delivered: fulfillment === "delivered",
+  };
 
   return (
     <Shell title="Order status" back="/menu" showCart={false}>
@@ -109,16 +120,16 @@ export default function Confirm() {
               {order ? formatPrice(order.totalCents) : "—"}
             </div>
           </div>
-          <PaymentBadge status={order?.paymentStatus} />
+          <PaymentBadge status={order?.paymentStatus} cashtagSent={!!order?.cashtagSent} />
         </div>
       </div>
 
       <div className="glass-card rounded-2xl p-4 mb-4">
         <h3 className="text-sm font-semibold mb-3">Progress</h3>
         <ol className="space-y-3">
-          {STATUS_STEPS.map((s, i) => {
+          {PROGRESS_STEPS.map((s) => {
             const Icon = s.icon;
-            const done = i <= currentIdx;
+            const done = !!stepDone[s.key];
             return (
               <li
                 key={s.key}
