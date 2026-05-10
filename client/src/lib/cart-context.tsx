@@ -136,7 +136,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           <ToastAction
             altText="View cart"
             data-testid="toast-action-view-cart"
-            onClick={() => navigate("/cart")}
+            onClick={(e) => {
+              e.preventDefault();
+              // App uses hash routing — set the hash directly so navigation
+              // wins regardless of toast unmount timing or pointer races.
+              if (window.location.hash !== "#/cart") {
+                window.location.hash = "/cart";
+              }
+              navigate("/cart");
+            }}
           >
             View cart
           </ToastAction>
