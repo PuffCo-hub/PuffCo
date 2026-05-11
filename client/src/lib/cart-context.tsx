@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { applyMarkup, setMarkupPercent, type Product } from "./catalog";
 import { apiRequest } from "./queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ToastAction } from "@/components/ui/toast";
 import { useLocation } from "wouter";
 
 export type CartLine = {
@@ -128,26 +127,53 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       // Feedback toast — replaces any previous "Added" toast so spamming
       // doesn't stack a tower of notifications. Clear, non-technical wording.
       if (lastToastIdRef.current) dismiss(lastToastIdRef.current);
+      // We intentionally use a plain <a href="#/cart"> instead of Radix's
+      // ToastAction. Radix Action automatically dismisses the toast on click,
+      // and on mobile that unmount can race the JS navigation handler so the
+      // user ends up still on the menu. A native anchor with an in-page hash
+      // target hands the navigation to the browser itself — it can't be
+      // swallowed by React unmounting, pointer-up races, or wouter state
+      // timing. wouter's useHashLocation hook listens to `hashchange`, so the
+      // route updates as soon as the browser commits the hash.
       const t = toast({
         title: "Added to cart",
         description: `${p.orderName} — qty ${nextQty}`,
         duration: 2400,
         action: (
-          <ToastAction
-            altText="View cart"
+          <a
+            href="#/cart"
             data-testid="toast-action-view-cart"
+            aria-label="View cart"
+            className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             onClick={(e) => {
+              // Previous fix used Radix's <ToastAction>. Radix Action runs
+              // its own onClick after ours and dismisses the toast — that
+              // unmount restores focus to the originating "Add" button on
+              // mobile Safari/Chrome webviews, which can cancel or visually
+              // mask the hash navigation we just initiated. Replacing the
+              // action with a plain anchor removes Radix's auto-dismiss/
+              // focus-restore from the critical path.
+              //
+              // We let the anchor do the work but ALSO call hash + navigate
+              // here as a belt-and-suspenders. preventDefault() is used so
+              // we control the navigation deterministically when the JS
+              // handler runs; if a webview swallows the JS handler the
+              // anchor's default still fires. setTimeout queues the toast
+              // dismiss for after the navigation lands.
               e.preventDefault();
-              // App uses hash routing — set the hash directly so navigation
-              // wins regardless of toast unmount timing or pointer races.
-              if (window.location.hash !== "#/cart") {
-                window.location.hash = "/cart";
+              const target = "#/cart";
+              if (window.location.hash !== target) {
+                // assign() pushes a real history entry so the back button
+                // returns to the menu, which is what users expect.
+                window.location.assign(target);
               }
               navigate("/cart");
+              const id = lastToastIdRef.current;
+              if (id) setTimeout(() => dismiss(id), 0);
             }}
           >
             View cart
-          </ToastAction>
+          </a>
         ),
       });
       lastToastIdRef.current = t.id;
