@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Shell, Disclaimer } from "@/components/Shell";
 import {
   CATEGORY_OPTIONS,
@@ -143,6 +143,31 @@ export default function Menu() {
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [trendingBusy, setTrendingBusy] = useState<string | null>(null);
+  const browseSectionRef = useRef<HTMLElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  function scrollToBrowse() {
+    // Small timeout so the tile expansion mount finishes before we scroll —
+    // otherwise the page can jump above the newly-opened section on mobile.
+    window.setTimeout(() => {
+      browseSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  }
+
+  function openCategoryAndScroll(id: CategoryId) {
+    setActiveCategory(id);
+    setActiveSubcategory(null);
+    scrollToBrowse();
+  }
+
+  function showAllTrending() {
+    // "See all" near the trending row → clear category/search filters and
+    // bring the user to the full product grid via the browse section.
+    setActiveCategory(null);
+    setActiveSubcategory(null);
+    setQ("");
+    scrollToBrowse();
+  }
 
   const { data: shops = [] } = useQuery<Shop[]>({
     queryKey: ["/api/shops"],
@@ -189,7 +214,14 @@ export default function Menu() {
   }, [q, activeCategory, activeSubcategory, products]);
 
   function chooseCategory(id: CategoryId) {
-    setActiveCategory((current) => (current === id ? null : id));
+    setActiveCategory((current) => {
+      const next = current === id ? null : id;
+      // When the user is opening (not closing) a category tile, scroll the
+      // opened subcategory list into view so they can immediately see and tap
+      // the products that just appeared below.
+      if (next !== null) scrollToBrowse();
+      return next;
+    });
     setActiveSubcategory(null);
   }
 
@@ -261,8 +293,12 @@ export default function Menu() {
             <button
               key={c.id}
               onClick={() => {
-                setActiveCategory((cur) => (cur === c.id ? null : c.id));
-                setActiveSubcategory(null);
+                if (activeCategory === c.id) {
+                  setActiveCategory(null);
+                  setActiveSubcategory(null);
+                } else {
+                  openCategoryAndScroll(c.id);
+                }
               }}
               className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition ${
                 activeCategory === c.id
@@ -379,6 +415,7 @@ export default function Menu() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search vapes, carts, glass, papers, wraps…"
@@ -396,9 +433,14 @@ export default function Menu() {
             </button>
           ) : null}
           <button
+            type="button"
+            onClick={() => {
+              searchInputRef.current?.focus();
+              scrollToBrowse();
+            }}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 size-9 rounded-full bg-secondary flex items-center justify-center hover-elevate"
             data-testid="button-filter"
-            aria-label="Filter"
+            aria-label="Filter and browse"
           >
             <SlidersHorizontal className="size-4" />
           </button>
@@ -416,7 +458,14 @@ export default function Menu() {
               Popular requests written like you would order in-store.
             </p>
           </div>
-          <span className="text-xs text-primary font-semibold">See all</span>
+          <button
+            type="button"
+            onClick={showAllTrending}
+            className="text-xs text-primary font-semibold hover-elevate rounded-full px-2.5 py-1.5"
+            data-testid="button-see-all-trending"
+          >
+            See all
+          </button>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4">
           {isLoading ? (
@@ -489,7 +538,7 @@ export default function Menu() {
         </div>
       </section>
 
-      <section className="mb-5">
+      <section className="mb-5" ref={browseSectionRef}>
         <h3 className="text-base font-semibold mb-2">
           {activeShop ? `Browse ${activeShop.name} by item type` : "Browse by item type"}
         </h3>

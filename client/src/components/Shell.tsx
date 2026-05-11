@@ -59,23 +59,22 @@ export function Shell({ children, title, back, showCart = true }: Props) {
             ) : null}
           </div>
           {showCart && (
-            <Link href="/cart">
-              <button
-                className="relative rounded-full p-2.5 hover-elevate min-w-[44px] min-h-[44px] flex items-center justify-center"
-                aria-label="Open cart"
-                data-testid="button-open-cart"
-              >
-                <ShoppingBag className="size-6" />
-                {cartCount > 0 && (
-                  <span
-                    className="absolute top-0 right-0 min-w-[20px] h-[20px] px-1 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center ring-2 ring-background"
-                    data-testid="badge-cart-count"
-                  >
-                    {cartCount}
-                  </span>
-                )}
-              </button>
-            </Link>
+            <button
+              onClick={() => navigate("/cart")}
+              className="relative rounded-full p-2.5 hover-elevate min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label="Open cart"
+              data-testid="button-open-cart"
+            >
+              <ShoppingBag className="size-6" />
+              {cartCount > 0 && (
+                <span
+                  className="absolute top-0 right-0 min-w-[20px] h-[20px] px-1 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center ring-2 ring-background"
+                  data-testid="badge-cart-count"
+                >
+                  {cartCount}
+                </span>
+              )}
+            </button>
           )}
         </div>
       </header>
