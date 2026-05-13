@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Shell, Disclaimer } from "@/components/Shell";
 import {
   CATEGORY_OPTIONS,
@@ -100,17 +100,23 @@ function CategoryTile({
   active,
   onClick,
   products,
+  tileRef,
   children,
 }: {
   category: (typeof CATEGORY_OPTIONS)[number];
   active: boolean;
   onClick: () => void;
   products: Product[];
+  tileRef?: (el: HTMLDivElement | null) => void;
   children?: React.ReactNode;
 }) {
   const preview = products.find((p) => categoryMatches(category, p.category));
   return (
-    <div className={`bg-card rounded-2xl overflow-hidden border transition ${active ? "border-primary/80" : "border-card-border"}`}>
+    <div
+      ref={tileRef}
+      id={`category-tile-${category.id}`}
+      className={`bg-card rounded-2xl overflow-hidden border transition ${active ? "border-primary/80" : "border-card-border"}`}
+    >
       <button
         onClick={onClick}
         className="w-full p-3 text-left hover-elevate transition"
@@ -155,19 +161,57 @@ export default function Menu() {
   const [trendingBusy, setTrendingBusy] = useState<string | null>(null);
   const browseSectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const categoryTileRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const pendingScrollIdRef = useRef<CategoryId | null>(null);
+
+  // Robust scroll: wait through two animation frames so React has committed the
+  // expanded subtree to the DOM, then use scrollIntoView on the tile itself
+  // (not the parent section). Older Android Chrome ignored smooth scrolls that
+  // fired before layout settled — this guarantees the target is in the DOM and
+  // measured before we animate to it.
+  function scrollToTarget(target: HTMLElement | null) {
+    if (!target) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch {
+          // Older browsers: fall back to an absolute scroll.
+          const top =
+            target.getBoundingClientRect().top + window.scrollY - 12;
+          window.scrollTo({ top, behavior: "smooth" });
+        }
+        // A delayed nudge: Android sometimes interrupts the first smooth scroll
+        // when an image lazily loads above the target. Re-aim after ~250ms to
+        // ensure the user lands on the expanded content.
+        window.setTimeout(() => {
+          const top = target.getBoundingClientRect().top + window.scrollY - 12;
+          window.scrollTo({ top, behavior: "smooth" });
+        }, 260);
+      });
+    });
+  }
 
   function scrollToBrowse() {
-    // Small timeout so the tile expansion mount finishes before we scroll —
-    // otherwise the page can jump above the newly-opened section on mobile.
-    window.setTimeout(() => {
-      browseSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 60);
+    scrollToTarget(browseSectionRef.current);
+  }
+
+  function scrollToCategoryTile(id: CategoryId) {
+    const el = categoryTileRefs.current[id];
+    if (el) {
+      scrollToTarget(el);
+    } else {
+      // Tile not mounted yet — remember the target and let the effect retry
+      // once the active category renders.
+      pendingScrollIdRef.current = id;
+    }
   }
 
   function openCategoryAndScroll(id: CategoryId) {
     setActiveCategory(id);
     setActiveSubcategory(null);
-    scrollToBrowse();
+    pendingScrollIdRef.current = id;
+    scrollToCategoryTile(id);
   }
 
   function showAllTrending() {
@@ -178,6 +222,19 @@ export default function Menu() {
     setQ("");
     scrollToBrowse();
   }
+
+  // After a category becomes active, re-aim the scroll once its expanded
+  // content has mounted. This is the safety net that makes Android reliably
+  // land on the open section even if the synchronous scroll fired too early.
+  useEffect(() => {
+    if (activeCategory && pendingScrollIdRef.current === activeCategory) {
+      const el = categoryTileRefs.current[activeCategory];
+      if (el) {
+        scrollToTarget(el);
+        pendingScrollIdRef.current = null;
+      }
+    }
+  }, [activeCategory]);
 
   const { data: shops = [] } = useQuery<Shop[]>({
     queryKey: ["/api/shops"],
@@ -227,9 +284,11 @@ export default function Menu() {
     setActiveCategory((current) => {
       const next = current === id ? null : id;
       // When the user is opening (not closing) a category tile, scroll the
-      // opened subcategory list into view so they can immediately see and tap
-      // the products that just appeared below.
-      if (next !== null) scrollToBrowse();
+      // opened tile into view so the subcategory chips + products are visible.
+      if (next !== null) {
+        pendingScrollIdRef.current = next;
+        scrollToCategoryTile(next);
+      }
       return next;
     });
     setActiveSubcategory(null);
@@ -577,7 +636,16 @@ export default function Menu() {
         </h3>
         <div className="grid gap-2">
           {CATEGORY_OPTIONS.map((c) => (
-            <CategoryTile key={c.id} category={c} active={activeCategory === c.id} onClick={() => chooseCategory(c.id)} products={products}>
+            <CategoryTile
+              key={c.id}
+              category={c}
+              active={activeCategory === c.id}
+              onClick={() => chooseCategory(c.id)}
+              products={products}
+              tileRef={(el) => {
+                categoryTileRefs.current[c.id] = el;
+              }}
+            >
               <div className="border-t border-border/60 px-3 pb-3 pt-2">
                 <div className="flex gap-2 overflow-x-auto pb-2 -mx-3 px-3">
                   <button

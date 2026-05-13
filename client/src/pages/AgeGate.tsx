@@ -4,6 +4,7 @@ import { SmokeWordmark } from "@/components/SmokeWordmark";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, Truck, Clock, Sparkles, AlertTriangle } from "lucide-react";
 import neonDeliveryBg from "@/assets/brand/neon-delivery-bg.jpeg";
+import { InstallHelp } from "@/components/InstallHelp";
 
 export default function AgeGate() {
   const [, navigate] = useLocation();
@@ -117,6 +118,9 @@ export default function AgeGate() {
           >
             I'm under 21 — take me away
           </button>
+          <div className="pt-1 flex items-center justify-center">
+            <InstallHelp triggerLabel="How to install PuffGo on your phone" />
+          </div>
         </div>
       </div>
 
