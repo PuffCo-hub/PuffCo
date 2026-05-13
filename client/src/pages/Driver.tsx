@@ -26,14 +26,39 @@ type DriverOrder = {
   driverStatus: string;
   paymentStatus: string;
 };
-type DriverSession = { driver: { id: string; name: string; phone: string } };
+type DriverInfo = {
+  id: string;
+  name: string;
+  phone: string;
+  driverCode?: string;
+  username?: string;
+};
+type DriverSession = { driver: DriverInfo; authMode?: "pin" | "password" };
+type DriverAuth =
+  | { mode: "pin"; pin: string }
+  | { mode: "password"; username: string; password: string };
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
-async function driverRequest(pin: string, method: string, url: string, body?: unknown) {
+function authHeaders(auth: DriverAuth): Record<string, string> {
+  if (auth.mode === "password") {
+    return {
+      "x-driver-username": auth.username,
+      "x-driver-password": auth.password,
+    };
+  }
+  return { "x-driver-pin": auth.pin };
+}
+
+async function driverRequest(
+  auth: DriverAuth,
+  method: string,
+  url: string,
+  body?: unknown,
+) {
   const res = await fetch(API_BASE + url, {
     method,
-    headers: { "Content-Type": "application/json", "x-driver-pin": pin },
+    headers: { "Content-Type": "application/json", ...authHeaders(auth) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -41,6 +66,27 @@ async function driverRequest(pin: string, method: string, url: string, body?: un
     throw new Error(text || res.statusText);
   }
   return res.json();
+}
+
+async function publicJson(method: string, url: string, body?: unknown) {
+  const res = await fetch(API_BASE + url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let data: any = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+  if (!res.ok) {
+    const message =
+      (data && (data.error?.formErrors?.[0] ||
+        data.error?.fieldErrors && Object.values(data.error.fieldErrors).flat()[0] ||
+        (typeof data.error === "string" ? data.error : null))) ||
+      text ||
+      res.statusText;
+    throw new Error(String(message));
+  }
+  return data;
 }
 
 function playBeep() {
@@ -84,11 +130,27 @@ function dropoffAddress(d: DriverOrder["dropoff"]): string {
   return [line1, d.city, d.state, d.zip].filter(Boolean).join(", ").trim();
 }
 
+type Screen = "landing" | "login" | "signup";
+
 export default function Driver() {
   const { toast } = useToast();
-  const [pin, setPin] = useState("");
-  const [session, setSession] = useState<DriverSession | null>(null);
+  const [screen, setScreen] = useState<Screen>("landing");
+  // login state
+  const [loginMode, setLoginMode] = useState<"password" | "pin">("password");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginPin, setLoginPin] = useState("");
   const [authError, setAuthError] = useState("");
+  // signup state
+  const [signupUsername, setSignupUsername] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirm, setSignupConfirm] = useState("");
+  const [signupError, setSignupError] = useState("");
+  const [signupPending, setSignupPending] = useState(false);
+  const [issuedCode, setIssuedCode] = useState<string | null>(null);
+  // session
+  const [auth, setAuth] = useState<DriverAuth | null>(null);
+  const [session, setSession] = useState<DriverSession | null>(null);
   const [soundOn, setSoundOn] = useState(false);
   const [available, setAvailable] = useState<DriverOrder[]>([]);
   const [active, setActive] = useState<DriverOrder[]>([]);
@@ -97,19 +159,98 @@ export default function Driver() {
   async function login() {
     setAuthError("");
     try {
-      const data: DriverSession = await driverRequest(pin, "POST", "/api/driver/login", { pin });
-      setSession(data);
-    } catch {
-      setAuthError("Invalid driver access code.");
+      if (loginMode === "password") {
+        const username = loginUsername.trim();
+        if (!username || !loginPassword) {
+          setAuthError("Username and password required.");
+          return;
+        }
+        const data: DriverSession = await publicJson("POST", "/api/driver/login", {
+          username,
+          password: loginPassword,
+        });
+        setAuth({ mode: "password", username, password: loginPassword });
+        setSession(data);
+      } else {
+        const pin = loginPin.trim();
+        if (!pin) {
+          setAuthError("Access code required.");
+          return;
+        }
+        const data: DriverSession = await publicJson("POST", "/api/driver/login", { pin });
+        setAuth({ mode: "pin", pin });
+        setSession(data);
+      }
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (msg.toLowerCase().includes("invalid")) {
+        setAuthError(
+          loginMode === "password"
+            ? "Invalid username or password."
+            : "Invalid driver access code.",
+        );
+      } else {
+        setAuthError(msg || "Login failed.");
+      }
+    }
+  }
+
+  async function signup() {
+    setSignupError("");
+    const username = signupUsername.trim();
+    if (!username || username.length < 3) {
+      setSignupError("Username must be at least 3 characters.");
+      return;
+    }
+    if (!/^[A-Za-z0-9_.-]{3,32}$/.test(username)) {
+      setSignupError("Username may only contain letters, numbers, dot, underscore, or dash.");
+      return;
+    }
+    if (signupPassword.length < 6) {
+      setSignupError("Password must be at least 6 characters.");
+      return;
+    }
+    if (signupPassword !== signupConfirm) {
+      setSignupError("Passwords do not match.");
+      return;
+    }
+    setSignupPending(true);
+    try {
+      const data = await publicJson("POST", "/api/driver/signup", {
+        username,
+        password: signupPassword,
+      });
+      const code = data?.driver?.driverCode || "";
+      setIssuedCode(code);
+      // Auto-login so the driver lands on the load board right away.
+      const loginData: DriverSession = await publicJson("POST", "/api/driver/login", {
+        username,
+        password: signupPassword,
+      });
+      setAuth({ mode: "password", username, password: signupPassword });
+      setSession(loginData);
+      toast({
+        title: "Driver account created",
+        description: code ? `Your driver ID is ${code}` : "Welcome aboard.",
+      });
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (msg.toLowerCase().includes("taken")) {
+        setSignupError("That username is already taken. Try another.");
+      } else {
+        setSignupError(msg || "Signup failed.");
+      }
+    } finally {
+      setSignupPending(false);
     }
   }
 
   async function refresh() {
-    if (!session) return;
+    if (!session || !auth) return;
     try {
       const [av, ac] = await Promise.all([
-        driverRequest(pin, "GET", "/api/driver/orders/available"),
-        driverRequest(pin, "GET", "/api/driver/orders/active"),
+        driverRequest(auth, "GET", "/api/driver/orders/available"),
+        driverRequest(auth, "GET", "/api/driver/orders/active"),
       ]);
       const incomingIds = new Set<number>((av as DriverOrder[]).map((o) => o.id));
       const previously = lastAvailableIds.current;
@@ -127,7 +268,9 @@ export default function Driver() {
     } catch (err: any) {
       if (String(err?.message || "").includes("401")) {
         setSession(null);
-        setAuthError("Session expired. Re-enter the access code.");
+        setAuth(null);
+        setScreen("login");
+        setAuthError("Session expired. Sign in again.");
       }
     }
   }
@@ -141,8 +284,9 @@ export default function Driver() {
   }, [session, soundOn]);
 
   async function claim(orderId: number) {
+    if (!auth) return;
     try {
-      await driverRequest(pin, "POST", `/api/driver/orders/${orderId}/claim`);
+      await driverRequest(auth, "POST", `/api/driver/orders/${orderId}/claim`);
       toast({ title: "Order claimed" });
       await refresh();
     } catch (err: any) {
@@ -157,8 +301,9 @@ export default function Driver() {
   }
 
   async function setStatus(orderId: number, status: string) {
+    if (!auth) return;
     try {
-      await driverRequest(pin, "PATCH", `/api/driver/orders/${orderId}/status`, {
+      await driverRequest(auth, "PATCH", `/api/driver/orders/${orderId}/status`, {
         driverStatus: status,
       });
       await refresh();
@@ -167,41 +312,237 @@ export default function Driver() {
     }
   }
 
+  // ----- Unauthenticated screens -----
   if (!session) {
-    return (
-      <Shell title="Driver portal" back="/menu" showCart={false}>
-        <div className="bg-card border border-card-border rounded-3xl p-5 mb-5">
-          <h2 className="text-lg font-semibold mb-1">Driver access</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            Enter the driver access code issued by PuffGo admin.
+    if (screen === "landing") {
+      return (
+        <Shell title="Driver portal" back="/menu" showCart={false}>
+          <div className="bg-card border border-card-border rounded-3xl p-5 mb-4">
+            <h2 className="text-lg font-semibold mb-1">Welcome, driver</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Choose how you'd like to continue.
+            </p>
+            <Button
+              className="ember-button w-full mb-3 h-12"
+              onClick={() => {
+                setScreen("login");
+                setAuthError("");
+              }}
+              data-testid="button-driver-existing"
+            >
+              Existing driver — open load board
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full h-12"
+              onClick={() => {
+                setScreen("signup");
+                setSignupError("");
+                setIssuedCode(null);
+              }}
+              data-testid="button-driver-new"
+            >
+              New driver? Sign up
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground text-center">
+            New drivers get a unique driver ID (PGDP###) on signup.
           </p>
-          <Input
-            value={pin}
-            onChange={(e) => {
-              setPin(e.target.value);
+        </Shell>
+      );
+    }
+
+    if (screen === "signup") {
+      return (
+        <Shell title="New driver signup" back="/menu" showCart={false}>
+          <div className="bg-card border border-card-border rounded-3xl p-5 mb-4">
+            <h2 className="text-lg font-semibold mb-1">Create your driver account</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Pick a username and password. We'll issue your driver ID automatically.
+            </p>
+            <label className="block text-xs font-medium mb-1">Username</label>
+            <Input
+              value={signupUsername}
+              onChange={(e) => {
+                setSignupUsername(e.target.value);
+                setSignupError("");
+              }}
+              placeholder="e.g. alex_t"
+              autoComplete="username"
+              className="mb-3"
+              data-testid="input-signup-username"
+            />
+            <label className="block text-xs font-medium mb-1">Password</label>
+            <Input
+              value={signupPassword}
+              onChange={(e) => {
+                setSignupPassword(e.target.value);
+                setSignupError("");
+              }}
+              placeholder="At least 6 characters"
+              type="password"
+              autoComplete="new-password"
+              className="mb-3"
+              data-testid="input-signup-password"
+            />
+            <label className="block text-xs font-medium mb-1">Confirm password</label>
+            <Input
+              value={signupConfirm}
+              onChange={(e) => {
+                setSignupConfirm(e.target.value);
+                setSignupError("");
+              }}
+              placeholder="Re-enter password"
+              type="password"
+              autoComplete="new-password"
+              className="mb-3"
+              onKeyDown={(e) => { if (e.key === "Enter") signup(); }}
+              data-testid="input-signup-confirm"
+            />
+            <Button
+              className="ember-button w-full mb-2"
+              onClick={signup}
+              disabled={signupPending}
+              data-testid="button-signup-submit"
+            >
+              {signupPending ? "Creating…" : "Create driver account"}
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setScreen("landing");
+                setSignupError("");
+              }}
+              data-testid="button-signup-back"
+            >
+              Back
+            </Button>
+            {signupError ? (
+              <div className="text-xs text-destructive mt-3" data-testid="text-signup-error">
+                {signupError}
+              </div>
+            ) : null}
+            {issuedCode ? (
+              <div
+                className="text-xs text-emerald-600 dark:text-emerald-400 mt-3"
+                data-testid="text-issued-driver-code"
+              >
+                Your driver ID: <span className="font-mono font-semibold">{issuedCode}</span>
+              </div>
+            ) : null}
+          </div>
+        </Shell>
+      );
+    }
+
+    // login screen
+    return (
+      <Shell title="Driver sign in" back="/menu" showCart={false}>
+        <div className="bg-card border border-card-border rounded-3xl p-5 mb-4">
+          <h2 className="text-lg font-semibold mb-1">Driver sign in</h2>
+          <p className="text-sm text-muted-foreground mb-3">
+            Use your driver username and password, or the access code issued by admin.
+          </p>
+          <div className="flex gap-2 mb-3">
+            <Button
+              size="sm"
+              variant={loginMode === "password" ? "default" : "outline"}
+              onClick={() => {
+                setLoginMode("password");
+                setAuthError("");
+              }}
+              data-testid="button-login-mode-password"
+            >
+              Username
+            </Button>
+            <Button
+              size="sm"
+              variant={loginMode === "pin" ? "default" : "outline"}
+              onClick={() => {
+                setLoginMode("pin");
+                setAuthError("");
+              }}
+              data-testid="button-login-mode-pin"
+            >
+              Access code
+            </Button>
+          </div>
+          {loginMode === "password" ? (
+            <>
+              <Input
+                value={loginUsername}
+                onChange={(e) => {
+                  setLoginUsername(e.target.value);
+                  setAuthError("");
+                }}
+                placeholder="Username"
+                autoComplete="username"
+                className="mb-2"
+                data-testid="input-login-username"
+              />
+              <Input
+                value={loginPassword}
+                onChange={(e) => {
+                  setLoginPassword(e.target.value);
+                  setAuthError("");
+                }}
+                placeholder="Password"
+                type="password"
+                autoComplete="current-password"
+                className="mb-3"
+                onKeyDown={(e) => { if (e.key === "Enter") login(); }}
+                data-testid="input-login-password"
+              />
+            </>
+          ) : (
+            <Input
+              value={loginPin}
+              onChange={(e) => {
+                setLoginPin(e.target.value);
+                setAuthError("");
+              }}
+              placeholder="Driver access code"
+              type="password"
+              className="mb-3"
+              onKeyDown={(e) => { if (e.key === "Enter") login(); }}
+              data-testid="input-driver-pin"
+            />
+          )}
+          <Button
+            className="ember-button w-full mb-2"
+            onClick={login}
+            data-testid="button-driver-login"
+          >
+            Open load board
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              setScreen("landing");
               setAuthError("");
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") login();
-            }}
-            placeholder="Driver access code"
-            type="password"
-            className="mb-3"
-            data-testid="input-driver-pin"
-          />
-          <Button className="ember-button w-full mb-3" onClick={login} data-testid="button-driver-login">
-            Unlock driver
+            data-testid="button-login-back"
+          >
+            Back
           </Button>
-          {authError ? <div className="text-xs text-destructive mb-2">{authError}</div> : null}
+          {authError ? (
+            <div className="text-xs text-destructive mt-3" data-testid="text-login-error">{authError}</div>
+          ) : null}
         </div>
       </Shell>
     );
   }
 
+  // ----- Authenticated load board -----
+  const headerName = session.driver.driverCode
+    ? `${session.driver.name} · ${session.driver.driverCode}`
+    : session.driver.name;
   return (
-    <Shell title={`Driver · ${session.driver.name}`} back="/menu" showCart={false}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-xs text-muted-foreground">Auto-refreshing every 10s</div>
+    <Shell title={`Driver · ${headerName}`} back="/menu" showCart={false}>
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div className="text-xs text-muted-foreground">Open order load board · auto-refreshing every 10s</div>
         <Button
           variant="outline"
           size="sm"
@@ -224,7 +565,7 @@ export default function Driver() {
         )}
       </Section>
 
-      <Section title={`Available to claim (${available.length})`}>
+      <Section title={`Open orders — available to claim (${available.length})`}>
         {available.length === 0 ? (
           <Empty text="No deliveries waiting." />
         ) : (

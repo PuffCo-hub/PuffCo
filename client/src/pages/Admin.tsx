@@ -1473,6 +1473,9 @@ type DriverRow = {
   phone: string;
   active: boolean;
   pin: string;
+  driverCode?: string;
+  username?: string;
+  password?: string;
 };
 
 function ShopsPanel({ pin }: { pin: string }) {
@@ -1919,6 +1922,8 @@ function DriversPanel({ pin }: { pin: string }) {
 function DriverEditRow({ driver, onSave }: { driver: DriverRow; onSave: (patch: Partial<DriverRow>) => void }) {
   const [phone, setPhone] = useState(driver.phone || "");
   const [pinValue, setPinValue] = useState(driver.pin || "");
+  const [username, setUsername] = useState(driver.username || "");
+  const [newPassword, setNewPassword] = useState("");
   const [active, setActive] = useState(!!driver.active);
   return (
     <div
@@ -1930,6 +1935,16 @@ function DriverEditRow({ driver, onSave }: { driver: DriverRow; onSave: (patch: 
         <div>
           <div className="font-semibold text-sm">{driver.name}</div>
           <div className="font-mono text-[10px] text-muted-foreground">ID: {driver.id}</div>
+          {driver.driverCode ? (
+            <div className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+              Driver code: {driver.driverCode}
+            </div>
+          ) : null}
+          {driver.username ? (
+            <div className="font-mono text-[10px] text-muted-foreground">
+              Username: {driver.username}
+            </div>
+          ) : null}
         </div>
         <Toggle
           checked={active}
@@ -1949,17 +1964,39 @@ function DriverEditRow({ driver, onSave }: { driver: DriverRow; onSave: (patch: 
           data-testid={`input-edit-driver-phone-${driver.id}`}
         />
       </Field>
-      <Field label="Access PIN">
+      <Field label="Access PIN" hint="Legacy access code. Drivers may sign in by username/password instead.">
         <Input
           value={pinValue}
           onChange={(e) => setPinValue(e.target.value)}
           data-testid={`input-edit-driver-pin-${driver.id}`}
         />
       </Field>
+      <Field label="Username" hint="Used by drivers to sign in. Letters, numbers, dot, underscore, dash.">
+        <Input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          data-testid={`input-edit-driver-username-${driver.id}`}
+        />
+      </Field>
+      <Field label="Reset password" hint="Leave blank to keep the existing password. Minimum 6 characters.">
+        <Input
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          type="password"
+          placeholder="(unchanged)"
+          data-testid={`input-edit-driver-password-${driver.id}`}
+        />
+      </Field>
       <Button
         size="sm"
         className="w-full"
-        onClick={() => onSave({ phone, pin: pinValue })}
+        onClick={() => {
+          const patch: Partial<DriverRow> = { phone, pin: pinValue };
+          if (username !== (driver.username || "")) patch.username = username;
+          if (newPassword.trim()) patch.password = newPassword.trim();
+          onSave(patch);
+          setNewPassword("");
+        }}
         data-testid={`button-save-driver-${driver.id}`}
       >
         Save driver

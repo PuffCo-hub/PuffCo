@@ -65,6 +65,33 @@ import {
 } from "./notifications";
 import { startSweeper, runOnce } from "./sweeper";
 import { z } from "zod";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+
+// Password hashing via Node's built-in scrypt. Format: scrypt$N$saltHex$hashHex.
+// N is the cost parameter (kept for forward-compat if we ever raise it). No
+// external dependency — runs anywhere the server runs.
+function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  const hash = scryptSync(password, salt, 64);
+  return `scrypt$1$${salt.toString("hex")}$${hash.toString("hex")}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  if (!stored || !password) return false;
+  const parts = stored.split("$");
+  if (parts.length !== 4 || parts[0] !== "scrypt") return false;
+  try {
+    const salt = Buffer.from(parts[2], "hex");
+    const expected = Buffer.from(parts[3], "hex");
+    const actual = scryptSync(password, salt, expected.length);
+    if (actual.length !== expected.length) return false;
+    return timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
+
+const USERNAME_RE = /^[A-Za-z0-9_.-]{3,32}$/;
 
 // Phone number must allow common formatting (spaces, dashes, parentheses, dots,
 // leading +) but contain at least 7 digits.
@@ -118,6 +145,19 @@ async function requireShop(req: any, res: any) {
 
 async function requireDriver(req: any, res: any) {
   const pin = String(req.headers["x-driver-pin"] || "").trim();
+  const username = String(req.headers["x-driver-username"] || "").trim();
+  const password = String(req.headers["x-driver-password"] || "");
+  // Username/password takes precedence when supplied so a driver who later
+  // sets credentials does not get matched as a PIN. Legacy PIN auth still
+  // works for seeded or admin-created drivers that never set a password.
+  if (username && password) {
+    const driver = await storage.getDriverByUsername(username);
+    if (!driver || !driver.active || !verifyPassword(password, driver.passwordHash)) {
+      res.status(401).json({ error: "invalid driver credentials" });
+      return null;
+    }
+    return driver;
+  }
   if (!pin) {
     res.status(401).json({ error: "driver access code required" });
     return null;
@@ -1028,15 +1068,82 @@ export async function registerRoutes(
   // ----------- Driver portal (role-scoped) -----------
   app.post("/api/driver/login", async (req, res) => {
     const pin = String(req.body?.pin || "").trim();
-    const driver = await storage.getDriverByPin(pin);
-    if (!driver || !driver.active) {
-      return res.status(401).json({ error: "invalid access code" });
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
+    let driver = undefined as Awaited<ReturnType<typeof storage.getDriverByUsername>>;
+    let authMode: "pin" | "password" | null = null;
+    if (username && password) {
+      driver = await storage.getDriverByUsername(username);
+      if (!driver || !driver.active || !verifyPassword(password, driver.passwordHash)) {
+        return res.status(401).json({ error: "invalid username or password" });
+      }
+      authMode = "password";
+    } else if (pin) {
+      driver = await storage.getDriverByPin(pin);
+      if (!driver || !driver.active) {
+        return res.status(401).json({ error: "invalid access code" });
+      }
+      authMode = "pin";
+    } else {
+      return res.status(400).json({ error: "username/password or pin required" });
     }
     res.json({
       driver: {
         id: driver.id,
         name: driver.name,
         phone: driver.phone,
+        driverCode: driver.driverCode || "",
+        username: driver.username || "",
+      },
+      authMode,
+    });
+  });
+
+  // Public driver signup. Issues a sequential PGDP### code and stores the
+  // password hashed. Username is unique (case-insensitive). Returns the new
+  // driver code so the driver can save it.
+  app.post("/api/driver/signup", async (req, res) => {
+    const schema = z.object({
+      username: z.string().regex(USERNAME_RE, "username must be 3–32 chars, letters/digits/._-"),
+      password: z.string().min(6, "password must be at least 6 chars").max(128),
+      displayName: z.string().min(1).max(64).optional(),
+      phone: z.string().max(64).optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const existing = await storage.getDriverByUsername(parsed.data.username);
+    if (existing) {
+      return res.status(409).json({ error: "username already taken" });
+    }
+    const baseId = slugify(parsed.data.username) || `driver-${Date.now().toString(36)}`;
+    let id = baseId;
+    let n = 1;
+    while (await storage.getDriver(id)) {
+      n += 1;
+      id = `${baseId}-${n}`;
+    }
+    const driver = await storage.createDriver({
+      id,
+      name: parsed.data.displayName || parsed.data.username,
+      phone: parsed.data.phone ?? "",
+      active: true,
+      pin: "",
+      username: parsed.data.username,
+      passwordHash: hashPassword(parsed.data.password),
+    } as any);
+    await storage.appendAudit("driver.signup", driver.id, {
+      username: driver.username,
+      driverCode: driver.driverCode,
+    });
+    res.json({
+      driver: {
+        id: driver.id,
+        name: driver.name,
+        phone: driver.phone,
+        driverCode: driver.driverCode,
+        username: driver.username,
       },
     });
   });
@@ -1119,20 +1226,28 @@ export async function registerRoutes(
       phone: z.string().max(64).optional(),
       pin: z.string().min(3).max(64).optional(),
       active: z.boolean().optional(),
+      username: z.string().regex(USERNAME_RE).optional(),
+      password: z.string().min(6).max(128).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const id = parsed.data.id || slugify(parsed.data.name) || `driver-${Date.now().toString(36)}`;
     const exists = await storage.getDriver(id);
     if (exists) return res.status(409).json({ error: "driver id already exists" });
+    if (parsed.data.username) {
+      const u = await storage.getDriverByUsername(parsed.data.username);
+      if (u) return res.status(409).json({ error: "username already taken" });
+    }
     const d = await storage.createDriver({
       id,
       name: parsed.data.name,
       phone: parsed.data.phone ?? "",
       pin: parsed.data.pin && parsed.data.pin.length > 0 ? parsed.data.pin : `drive-${Math.random().toString(36).slice(2, 6)}`,
       active: parsed.data.active ?? true,
-    });
-    await storage.appendAudit("driver.created", d.id, { name: d.name });
+      username: parsed.data.username ?? "",
+      passwordHash: parsed.data.password ? hashPassword(parsed.data.password) : "",
+    } as any);
+    await storage.appendAudit("driver.created", d.id, { name: d.name, driverCode: d.driverCode });
     res.json(d);
   });
   app.patch("/api/admin/drivers/:id", async (req, res) => {
@@ -1142,10 +1257,23 @@ export async function registerRoutes(
       phone: z.string().max(64).optional(),
       pin: z.string().min(3).max(64).optional(),
       active: z.boolean().optional(),
+      username: z.string().regex(USERNAME_RE).optional(),
+      password: z.string().min(6).max(128).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const updated = await storage.updateDriver(req.params.id, parsed.data as any);
+    if (parsed.data.username) {
+      const existing = await storage.getDriverByUsername(parsed.data.username);
+      if (existing && existing.id !== req.params.id) {
+        return res.status(409).json({ error: "username already taken" });
+      }
+    }
+    const patch: Record<string, unknown> = { ...parsed.data };
+    if (parsed.data.password) {
+      patch.passwordHash = hashPassword(parsed.data.password);
+      delete (patch as any).password;
+    }
+    const updated = await storage.updateDriver(req.params.id, patch as any);
     if (!updated) return res.status(404).json({ error: "not found" });
     await storage.appendAudit("driver.updated", req.params.id, { keys: Object.keys(parsed.data) });
     res.json(updated);

@@ -353,5 +353,14 @@ export const drivers = sqliteTable("drivers", {
   pin: text("pin").notNull().default(""),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at"),
+  // Public-facing driver ID issued sequentially on signup, e.g. PGDP001.
+  // Drivers see and share this code; the internal `id` is a slug or uuid.
+  driverCode: text("driver_code").notNull().default(""),
+  // Self-service auth. Username is unique and case-insensitive at lookup time;
+  // passwordHash is a PBKDF2 hash with salt+iterations encoded into the string.
+  // Legacy PIN auth continues to work in parallel so existing seeded drivers
+  // are not locked out.
+  username: text("username").notNull().default(""),
+  passwordHash: text("password_hash").notNull().default(""),
 });
 export type Driver = typeof drivers.$inferSelect;

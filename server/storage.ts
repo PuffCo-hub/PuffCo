@@ -208,6 +208,10 @@ function tryAlter(sql: string) {
   // in all UI/calculation paths) plus free-form loyalty program notes.
   "ALTER TABLE shops ADD COLUMN puff_go_discount_percent INTEGER NOT NULL DEFAULT 10",
   "ALTER TABLE shops ADD COLUMN loyalty_program TEXT NOT NULL DEFAULT ''",
+  // Driver self-service auth + public driver code (PGDP###). Backfilled below.
+  "ALTER TABLE drivers ADD COLUMN driver_code TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE drivers ADD COLUMN username TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE drivers ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''",
   // Order economic snapshot. Stored at order creation so historical orders
   // never shift when shop discount % or markup % change later.
   "ALTER TABLE orders ADD COLUMN shop_payout_cents INTEGER NOT NULL DEFAULT 0",
@@ -479,6 +483,45 @@ function backfillShopPins() {
   }
 }
 
+// Find the next available driver code (PGDP001, PGDP002, ...). Scans
+// driver_code values already in the table, picks the max numeric suffix,
+// and returns max+1 padded to 3 digits.
+export function nextDriverCode(): string {
+  try {
+    const rows = sqlite
+      .prepare("SELECT driver_code FROM drivers WHERE driver_code LIKE 'PGDP%'")
+      .all() as Array<{ driver_code: string }>;
+    let max = 0;
+    for (const r of rows) {
+      const m = String(r.driver_code || "").match(/^PGDP(\d+)$/i);
+      if (m) {
+        const n = Number(m[1]);
+        if (Number.isFinite(n) && n > max) max = n;
+      }
+    }
+    return `PGDP${String(max + 1).padStart(3, "0")}`;
+  } catch {
+    return "PGDP001";
+  }
+}
+
+function backfillDriverCodes() {
+  try {
+    const rows = sqlite
+      .prepare(
+        "SELECT id FROM drivers WHERE driver_code = '' OR driver_code IS NULL ORDER BY created_at ASC, id ASC",
+      )
+      .all() as Array<{ id: string }>;
+    const update = sqlite.prepare("UPDATE drivers SET driver_code = ? WHERE id = ?");
+    for (const r of rows) {
+      const code = nextDriverCode();
+      update.run(code, r.id);
+    }
+  } catch (err) {
+    console.warn("[migrate] backfillDriverCodes:", (err as any)?.message);
+  }
+}
+
 function seedDriversIfEmpty() {
   const now = Date.now();
   const d = db.select({ value: count() }).from(drivers).get();
@@ -740,6 +783,7 @@ backfillShopPins();
 backfillStoreCodes();
 backfillPuffGoDiscount();
 seedDriversIfEmpty();
+backfillDriverCodes();
 seedSettingsIfMissing();
 migratePricingToFlatDelivery();
 backfillStock();
@@ -801,6 +845,7 @@ export interface IStorage {
   listDrivers(includeInactive?: boolean): Promise<Driver[]>;
   getDriver(id: string): Promise<Driver | undefined>;
   getDriverByPin(pin: string): Promise<Driver | undefined>;
+  getDriverByUsername(username: string): Promise<Driver | undefined>;
   createDriver(d: Partial<Driver> & { id: string; name: string }): Promise<Driver>;
   updateDriver(id: string, patch: Partial<Driver>): Promise<Driver | undefined>;
 
@@ -1187,6 +1232,10 @@ export class DatabaseStorage implements IStorage {
   }
   async createDriver(input: Partial<Driver> & { id: string; name: string }): Promise<Driver> {
     const now = Date.now();
+    const driverCode =
+      (input as any).driverCode && String((input as any).driverCode).trim().length > 0
+        ? String((input as any).driverCode).trim()
+        : nextDriverCode();
     return db
       .insert(drivers)
       .values({
@@ -1197,9 +1246,18 @@ export class DatabaseStorage implements IStorage {
         pin: input.pin ?? "",
         createdAt: now,
         updatedAt: now,
+        driverCode,
+        username: (input as any).username ?? "",
+        passwordHash: (input as any).passwordHash ?? "",
       } as any)
       .returning()
       .get();
+  }
+  async getDriverByUsername(username: string): Promise<Driver | undefined> {
+    const trimmed = (username || "").trim().toLowerCase();
+    if (!trimmed) return undefined;
+    const rows = db.select().from(drivers).all();
+    return rows.find((d) => String(d.username || "").toLowerCase() === trimmed);
   }
   async updateDriver(id: string, patch: Partial<Driver>): Promise<Driver | undefined> {
     return db
