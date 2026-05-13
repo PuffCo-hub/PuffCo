@@ -778,13 +778,11 @@ export default function Admin() {
                             )}
                           </div>
 
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(o.createdAt).toLocaleTimeString()} ·{" "}
-                            <span className="font-semibold text-foreground">{formatPrice(o.totalCents)}</span>
-                            {o.feeCents > 0 ? (
-                              <span className="opacity-70"> · fee {formatPrice(o.feeCents)}</span>
-                            ) : null}
+                          <div className="text-xs text-muted-foreground mb-2">
+                            {new Date(o.createdAt).toLocaleTimeString()}
                           </div>
+                          <OrderEconomics order={o} />
+                          {isUnpaid ? null : null}
                           {isUnpaid ? (
                             <div className="mt-1.5 text-[11px] bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1 text-amber-200">
                               Watch Cash App for note: <span className="font-mono font-bold">{orderCode}</span>
@@ -1457,7 +1455,10 @@ type ShopRow = {
   pin?: string;
   contactPhone?: string;
   address?: string;
-  payoutPercent?: number;
+  // Replaces the legacy payoutPercent field in the admin UI. PuffGo "discount"
+  // taken off the listed product price to determine the shop's payout per item.
+  puffGoDiscountPercent?: number;
+  loyaltyProgram?: string;
   storeHours?: string;
   storeCode?: string;
 };
@@ -1486,7 +1487,8 @@ function ShopsPanel({ pin }: { pin: string }) {
     contactPhone: "",
     address: "",
     pin: "",
-    payoutPercent: "80",
+    puffGoDiscountPercent: "10",
+    loyaltyProgram: "",
   };
   const [sForm, setSForm] = useState(blank);
   const [addError, setAddError] = useState("");
@@ -1499,7 +1501,11 @@ function ShopsPanel({ pin }: { pin: string }) {
         storeHours: sForm.storeHours.trim(),
         contactPhone: sForm.contactPhone.trim(),
         address: sForm.address.trim(),
-        payoutPercent: Math.max(0, Math.min(100, Math.round(Number(sForm.payoutPercent) || 0))),
+        puffGoDiscountPercent: Math.max(
+          0,
+          Math.min(100, Math.round(Number(sForm.puffGoDiscountPercent) || 0)),
+        ),
+        loyaltyProgram: sForm.loyaltyProgram.trim(),
       };
       if (sForm.pin.trim()) payload.pin = sForm.pin.trim();
       await adminRequest(pin, "POST", "/api/admin/shops", payload);
@@ -1556,6 +1562,14 @@ function ShopsPanel({ pin }: { pin: string }) {
                   {s.storeHours ? (
                     <div className="text-[11px] text-muted-foreground mt-0.5">
                       Hours: {s.storeHours}
+                    </div>
+                  ) : null}
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    PuffGo discount: {s.puffGoDiscountPercent ?? 10}%
+                  </div>
+                  {s.loyaltyProgram ? (
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Loyalty: {s.loyaltyProgram}
                     </div>
                   ) : null}
                 </div>
@@ -1649,13 +1663,32 @@ function ShopsPanel({ pin }: { pin: string }) {
               data-testid="input-shop-pin"
             />
           </Field>
-          <Field label="Shop payout %" hint="What share of each order subtotal the shop keeps (0–100).">
+          <Field
+            label="PuffGo discount %"
+            hint="Discount off the listed product price that determines what the shop receives. Usually 8–12%."
+          >
             <Input
               inputMode="numeric"
-              value={sForm.payoutPercent}
-              onChange={(e) => setSForm({ ...sForm, payoutPercent: e.target.value })}
-              placeholder="80"
-              data-testid="input-shop-payout"
+              value={sForm.puffGoDiscountPercent}
+              onChange={(e) =>
+                setSForm({ ...sForm, puffGoDiscountPercent: e.target.value })
+              }
+              placeholder="10"
+              data-testid="input-shop-discount"
+            />
+          </Field>
+          <Field
+            label="Specialized loyalty program"
+            hint="Free-form notes about any loyalty/rewards program this shop runs. Admin-only — not shown to customers."
+          >
+            <Textarea
+              value={sForm.loyaltyProgram}
+              onChange={(e) =>
+                setSForm({ ...sForm, loyaltyProgram: e.target.value })
+              }
+              placeholder="e.g. 10% off every 5th visit, punch card at counter."
+              rows={2}
+              data-testid="input-shop-loyalty"
             />
           </Field>
           {addError ? (
@@ -1690,7 +1723,10 @@ function ShopEditFields({
   const [contact, setContact] = useState(shop.contactPhone || "");
   const [address, setAddress] = useState(shop.address || "");
   const [pinValue, setPinValue] = useState(shop.pin || "");
-  const [payout, setPayout] = useState(String(shop.payoutPercent ?? 80));
+  const [discount, setDiscount] = useState(
+    String(shop.puffGoDiscountPercent ?? 10),
+  );
+  const [loyalty, setLoyalty] = useState(shop.loyaltyProgram ?? "");
   return (
     <div className="mt-2 space-y-2">
       <Field label="Shop name">
@@ -1743,12 +1779,26 @@ function ShopEditFields({
           data-testid={`input-edit-pin-${shop.id}`}
         />
       </Field>
-      <Field label="Shop payout %">
+      <Field
+        label="PuffGo discount %"
+        hint="Discount off the listed product price that determines what the shop receives. Usually 8–12%."
+      >
         <Input
           inputMode="numeric"
-          value={payout}
-          onChange={(e) => setPayout(e.target.value)}
-          data-testid={`input-edit-payout-${shop.id}`}
+          value={discount}
+          onChange={(e) => setDiscount(e.target.value)}
+          data-testid={`input-edit-discount-${shop.id}`}
+        />
+      </Field>
+      <Field
+        label="Specialized loyalty program"
+        hint="Free-form notes about any loyalty/rewards program this shop runs."
+      >
+        <Textarea
+          value={loyalty}
+          onChange={(e) => setLoyalty(e.target.value)}
+          rows={2}
+          data-testid={`input-edit-loyalty-${shop.id}`}
         />
       </Field>
       <Button
@@ -1763,7 +1813,11 @@ function ShopEditFields({
             contactPhone: contact,
             address,
             pin: pinValue,
-            payoutPercent: Math.max(0, Math.min(100, Math.round(Number(payout) || 0))),
+            puffGoDiscountPercent: Math.max(
+              0,
+              Math.min(100, Math.round(Number(discount) || 0)),
+            ),
+            loyaltyProgram: loyalty,
           } as Partial<ShopRow>)
         }
         data-testid={`button-save-shop-${shop.id}`}
@@ -2015,5 +2069,78 @@ function PaymentBadge({ status }: { status: string }) {
     >
       {m.label}
     </span>
+  );
+}
+
+// Per-order economics card — admin-only. Surfaces every leg of the payment
+// flow so operators can reconcile the Cash App transfer against shop payout,
+// PuffGo markup, delivery fee, tip, and the resulting PuffGo profit. Falls
+// back gracefully for historical orders that pre-date the snapshot columns
+// (those rows have zeros for the new fields).
+function OrderEconomics({ order }: { order: any }) {
+  const subtotal = Number(order.subtotal ?? 0);
+  const tip = Number(order.tipCents ?? 0);
+  const total = Number(order.totalCents ?? 0);
+  // Prefer stored snapshot. Fall back to derived values from feeCents for
+  // older rows so the card still renders sensible numbers.
+  const shopPayout = Number(order.shopPayoutCents ?? 0);
+  const puffGoMarkup = Number(order.puffGoMarkupCents ?? 0);
+  const delivery = Number(order.deliveryFeeCents ?? order.feeCents ?? 0);
+  const profit =
+    Number(order.puffGoProfitCents ?? 0) ||
+    (shopPayout > 0 ? subtotal - shopPayout + delivery : 0);
+  return (
+    <div
+      className="rounded-2xl border border-card-border bg-background/55 p-3 mb-3"
+      data-testid={`order-econ-${order.id}`}
+    >
+      <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">
+        Economics
+      </div>
+      <div className="grid grid-cols-2 gap-y-1 text-xs">
+        <span className="text-muted-foreground">Shop payout</span>
+        <span
+          className="tabular-nums text-right font-semibold"
+          data-testid={`econ-shop-payout-${order.id}`}
+        >
+          {formatPrice(shopPayout)}
+        </span>
+        <span className="text-muted-foreground">PuffGo markup (20%)</span>
+        <span
+          className="tabular-nums text-right"
+          data-testid={`econ-markup-${order.id}`}
+        >
+          {formatPrice(puffGoMarkup)}
+        </span>
+        <span className="text-muted-foreground">Delivery fee</span>
+        <span
+          className="tabular-nums text-right"
+          data-testid={`econ-delivery-${order.id}`}
+        >
+          {formatPrice(delivery)}
+        </span>
+        <span className="text-muted-foreground">Tip (driver)</span>
+        <span
+          className="tabular-nums text-right"
+          data-testid={`econ-tip-${order.id}`}
+        >
+          {formatPrice(tip)}
+        </span>
+        <span className="font-semibold text-foreground">Customer total</span>
+        <span
+          className="tabular-nums text-right font-semibold text-foreground"
+          data-testid={`econ-total-${order.id}`}
+        >
+          {formatPrice(total)}
+        </span>
+        <span className="font-semibold text-emerald-300">PuffGo profit</span>
+        <span
+          className="tabular-nums text-right font-semibold text-emerald-300"
+          data-testid={`econ-profit-${order.id}`}
+        >
+          {formatPrice(profit)}
+        </span>
+      </div>
+    </div>
   );
 }

@@ -13,6 +13,49 @@ import {
   type OrderItem,
 } from "@shared/schema";
 import { computePricing } from "./pricing";
+
+// Computes the per-order economic snapshot. Frozen onto the order so later
+// changes to a shop's puffGoDiscountPercent or the global markupPercent never
+// alter historical orders.
+//
+// Inputs are the validated items, the customer-facing subtotal (already
+// marked-up by the client cart), the resolved shop, and the active pricing
+// settings. Returns the breakdown we expose to admin and store on the row.
+//
+// Formula (default 10% shop discount, 20% PuffGo markup, $2.50 delivery):
+//   itemsBaseCents      = sum(item.basePriceCents * qty)               // list price
+//   shopPayoutCents     = itemsBaseCents * (1 - shopDiscount%/100)     // shop gets
+//   customerItemsCents  = order.subtotal (= itemsBase * (1 + markup%))  // customer items
+//   puffGoMarkupCents   = customerItemsCents - itemsBaseCents          // markup share
+//   deliveryFeeCents    = pricing.serviceFeeFlatCents                  // flat $2.50
+//   puffGoProfitCents   = customerItemsCents - shopPayoutCents + deliveryFeeCents
+//   customerTotalCents  = customerItemsCents + tipCents + deliveryFeeCents
+// Tip is intentionally excluded from PuffGo profit — passes through to driver.
+function computeOrderEconomics(args: {
+  items: { basePriceCents: number; qty: number }[];
+  customerSubtotalCents: number;
+  shopDiscountPercent: number;
+  deliveryFeeCents: number;
+}) {
+  const discount = Math.max(0, Math.min(100, args.shopDiscountPercent));
+  const itemsBaseCents = args.items.reduce(
+    (sum, it) =>
+      sum + Math.max(0, Math.round(it.basePriceCents)) * Math.max(0, Math.round(it.qty)),
+    0,
+  );
+  const shopPayoutCents = Math.round(itemsBaseCents * (1 - discount / 100));
+  const customerItemsCents = Math.max(0, Math.round(args.customerSubtotalCents));
+  const puffGoMarkupCents = Math.max(0, customerItemsCents - itemsBaseCents);
+  const deliveryFeeCents = Math.max(0, Math.round(args.deliveryFeeCents));
+  const puffGoProfitCents = customerItemsCents - shopPayoutCents + deliveryFeeCents;
+  return {
+    itemsBaseCents,
+    shopPayoutCents,
+    puffGoMarkupCents,
+    deliveryFeeCents,
+    puffGoProfitCents,
+  };
+}
 import { findSubstitutes } from "./substitutions";
 import {
   notify,
@@ -89,19 +132,37 @@ async function requireDriver(req: any, res: any) {
 
 // Strip customer/platform/financial fields. The shop sees only what it needs
 // to prep the order and its own payout. PuffGo markup, customer total, fee
-// breakdown, and driver economics are all omitted.
+// breakdown, tip, and driver economics are all omitted so the shop never sees
+// PuffGo's profit on the order.
 function shopOrderView(o: any, shop: any) {
   let items: any[] = [];
   try { items = JSON.parse(o.items || "[]"); } catch { items = []; }
-  // Shop payout = subtotal (pre-platform-markup) * payoutPercent. Subtotal is
-  // already the wholesale-equivalent figure the shop is owed; we apply the
-  // configured percent as a safety net so admins can tune payouts.
-  const payoutPercent = Math.max(0, Math.min(100, Number(shop?.payoutPercent ?? 80)));
-  const payoutCents = Math.round((o.subtotal ?? 0) * (payoutPercent / 100));
+  // Prefer the snapshot stored on the order. Falls back to recomputing from
+  // the current shop discount for historical orders that pre-date the snapshot
+  // columns (those rows have shopPayoutCents = 0).
+  const fallbackDiscount = Math.max(
+    0,
+    Math.min(100, Number(shop?.puffGoDiscountPercent ?? 10)),
+  );
+  let payoutCents = Number(o.shopPayoutCents ?? 0);
+  if (!payoutCents) {
+    const itemsBase = items.reduce(
+      (sum: number, it: any) =>
+        sum + (Number(it.basePriceCents) || 0) * (Number(it.qty) || 0),
+      0,
+    );
+    payoutCents = Math.round(itemsBase * (1 - fallbackDiscount / 100));
+  }
   return {
     id: o.id,
     orderCode: o.orderCode,
     createdAt: o.createdAt,
+    // Customer name (first + last initial) is included so the shop can confirm
+    // pickup identity. No phone, address, or platform economics.
+    customerName: [o.customerFirstName, o.customerLastInitial]
+      .filter(Boolean)
+      .join(" ")
+      .trim(),
     items: items.map((it) => ({
       id: it.id,
       name: it.name,
@@ -317,6 +378,23 @@ export async function registerRoutes(
     const finalFeeCents = breakdown.feeCents;
     const finalTotalCents = breakdown.totalCents;
 
+    // Snapshot the economics at order time so later admin tweaks to a shop's
+    // PuffGo discount % or the global markup % don't rewrite history.
+    const shop = await storage.getShop(parsed.data.shopId || "default");
+    const shopDiscountPercent = Math.max(
+      0,
+      Math.min(100, Number(shop?.puffGoDiscountPercent ?? 10)),
+    );
+    const econ = computeOrderEconomics({
+      items: items.map((it) => ({
+        basePriceCents: it.basePriceCents,
+        qty: it.qty,
+      })),
+      customerSubtotalCents: parsed.data.subtotal,
+      shopDiscountPercent,
+      deliveryFeeCents: finalFeeCents,
+    });
+
     for (const it of items) {
       await storage.adjustStock(it.id, -it.qty);
     }
@@ -324,6 +402,10 @@ export async function registerRoutes(
     const order = await storage.createOrder(parsed.data, {
       feeCents: finalFeeCents,
       totalCents: finalTotalCents,
+      shopPayoutCents: econ.shopPayoutCents,
+      puffGoMarkupCents: econ.puffGoMarkupCents,
+      deliveryFeeCents: econ.deliveryFeeCents,
+      puffGoProfitCents: econ.puffGoProfitCents,
     });
 
     await storage.appendAudit("order.created", String(order.id), {
@@ -580,7 +662,9 @@ export async function registerRoutes(
       pin: z.string().min(3).max(64).optional(),
       contactPhone: z.string().max(64).optional(),
       address: z.string().max(300).optional(),
-      payoutPercent: z.number().int().min(0).max(100).optional(),
+      // Replaces legacy payoutPercent in the admin UI. 8–12 is typical.
+      puffGoDiscountPercent: z.number().int().min(0).max(100).optional(),
+      loyaltyProgram: z.string().max(1000).optional(),
       storeHours: z.string().max(300).optional(),
       // storeCode is intentionally NOT accepted from clients — the server
       // always auto-generates the next P-number to keep the sequence
@@ -612,7 +696,8 @@ export async function registerRoutes(
       pin: z.string().min(3).max(64).optional(),
       contactPhone: z.string().max(64).optional(),
       address: z.string().max(300).optional(),
-      payoutPercent: z.number().int().min(0).max(100).optional(),
+      puffGoDiscountPercent: z.number().int().min(0).max(100).optional(),
+      loyaltyProgram: z.string().max(1000).optional(),
       storeHours: z.string().max(300).optional(),
     });
     const parsed = schema.safeParse(req.body);

@@ -204,6 +204,16 @@ function tryAlter(sql: string) {
   "ALTER TABLE shops ADD COLUMN updated_at INTEGER",
   "ALTER TABLE shops ADD COLUMN store_hours TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE shops ADD COLUMN store_code TEXT NOT NULL DEFAULT ''",
+  // Shop economics — PuffGo discount % off list (replaces legacy payout_percent
+  // in all UI/calculation paths) plus free-form loyalty program notes.
+  "ALTER TABLE shops ADD COLUMN puff_go_discount_percent INTEGER NOT NULL DEFAULT 10",
+  "ALTER TABLE shops ADD COLUMN loyalty_program TEXT NOT NULL DEFAULT ''",
+  // Order economic snapshot. Stored at order creation so historical orders
+  // never shift when shop discount % or markup % change later.
+  "ALTER TABLE orders ADD COLUMN shop_payout_cents INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE orders ADD COLUMN puff_go_markup_cents INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE orders ADD COLUMN delivery_fee_cents INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE orders ADD COLUMN puff_go_profit_cents INTEGER NOT NULL DEFAULT 0",
 ].forEach(tryAlter);
 
 // Backfill orderCode for any pre-existing rows (best effort — keeps customer
@@ -259,8 +269,10 @@ export const DEFAULT_PRICING: PricingSettings = {
   mode: "service_fee",
   serviceFeeFlatCents: FLAT_DELIVERY_FEE_CENTS,
   serviceFeePercent: 0,
-  revenueSplitPercent: 18,
-  markupPercent: 18,
+  revenueSplitPercent: 20,
+  // PuffGo markup added on top of the listed/base item price to compute what
+  // the customer pays. Drives the economic breakdown in routes.ts/computeOrderEconomics.
+  markupPercent: 20,
 };
 
 export const DEFAULT_ORDER_SETTINGS: OrderSettings = {
@@ -335,6 +347,17 @@ function migratePricingToFlatDelivery() {
         serviceFeeFlatCents: FLAT_DELIVERY_FEE_CENTS,
         serviceFeePercent: 0,
       };
+      db.update(settingsTable)
+        .set({ value: JSON.stringify(next), updatedAt: Date.now() })
+        .where(eq(settingsTable.key, "pricing"))
+        .run();
+    }
+    // Bump markupPercent from the old default 18% to the new 20% only when the
+    // admin hasn't customised it. Custom values (anything other than 18) are
+    // preserved so explicit operator choices stick.
+    const markup = Number(current.markupPercent);
+    if (markup === 18) {
+      const next: PricingSettings = { ...current, markupPercent: 20 };
       db.update(settingsTable)
         .set({ value: JSON.stringify(next), updatedAt: Date.now() })
         .where(eq(settingsTable.key, "pricing"))
@@ -418,6 +441,27 @@ function backfillStoreCodes() {
     }
   } catch (err) {
     console.warn("[migrate] backfillStoreCodes:", (err as any)?.message);
+  }
+}
+
+// Derive puff_go_discount_percent from the legacy payout_percent for any
+// previously-existing shop where the new column is still on its default. A
+// payout of 80% historically meant PuffGo kept 20%, so 100 - payout maps
+// directly onto the new discount percent. Shops that were already on the new
+// default (discount 10) stay there.
+function backfillPuffGoDiscount() {
+  try {
+    sqlite
+      .prepare(
+        `UPDATE shops
+         SET puff_go_discount_percent = MAX(0, MIN(100, 100 - COALESCE(payout_percent, 80)))
+         WHERE puff_go_discount_percent = 10
+           AND payout_percent IS NOT NULL
+           AND payout_percent <> 90`,
+      )
+      .run();
+  } catch (err) {
+    console.warn("[migrate] backfillPuffGoDiscount:", (err as any)?.message);
   }
 }
 
@@ -694,6 +738,7 @@ seedVendorAndLocationIfEmpty();
 seedShopsIfEmpty();
 backfillShopPins();
 backfillStoreCodes();
+backfillPuffGoDiscount();
 seedDriversIfEmpty();
 seedSettingsIfMissing();
 migratePricingToFlatDelivery();
@@ -703,8 +748,17 @@ backfillStock();
 // IStorage
 // ---------------------------------------------------------------------------
 
+export type OrderEconomicsSnapshot = {
+  feeCents: number;
+  totalCents: number;
+  shopPayoutCents: number;
+  puffGoMarkupCents: number;
+  deliveryFeeCents: number;
+  puffGoProfitCents: number;
+};
+
 export interface IStorage {
-  createOrder(order: InsertOrder, fees: { feeCents: number; totalCents: number }): Promise<Order>;
+  createOrder(order: InsertOrder, fees: OrderEconomicsSnapshot): Promise<Order>;
   getOrder(id: number): Promise<Order | undefined>;
   getOrderByCode(code: string): Promise<Order | undefined>;
   listOrders(): Promise<Order[]>;
@@ -765,7 +819,7 @@ export class DatabaseStorage implements IStorage {
   // Orders ------------------------------------------------------------------
   async createOrder(
     insert: InsertOrder,
-    fees: { feeCents: number; totalCents: number },
+    fees: OrderEconomicsSnapshot,
   ): Promise<Order> {
     const row = db
       .insert(orders)
@@ -773,6 +827,10 @@ export class DatabaseStorage implements IStorage {
         ...insert,
         feeCents: fees.feeCents,
         totalCents: fees.totalCents,
+        shopPayoutCents: fees.shopPayoutCents,
+        puffGoMarkupCents: fees.puffGoMarkupCents,
+        deliveryFeeCents: fees.deliveryFeeCents,
+        puffGoProfitCents: fees.puffGoProfitCents,
         createdAt: Date.now(),
       } as any)
       .returning()
@@ -1084,6 +1142,11 @@ export class DatabaseStorage implements IStorage {
         createdAt: now,
         storeHours: (input as any).storeHours ?? "",
         storeCode,
+        puffGoDiscountPercent:
+          typeof (input as any).puffGoDiscountPercent === "number"
+            ? Math.max(0, Math.min(100, (input as any).puffGoDiscountPercent))
+            : 10,
+        loyaltyProgram: (input as any).loyaltyProgram ?? "",
       } as any)
       .returning()
       .get();

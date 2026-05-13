@@ -10,6 +10,7 @@ type ShopOrder = {
   id: number;
   orderCode: string;
   createdAt: number;
+  customerName: string;
   items: ShopOrderItem[];
   notes: string;
   shopStatus: string;
@@ -250,8 +251,16 @@ function OrderCard({
       data-testid={`shop-order-${order.id}`}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
+        <div className="min-w-0">
           <div className="font-semibold">{order.orderCode}</div>
+          {order.customerName ? (
+            <div
+              className="text-xs font-semibold text-foreground/90 truncate"
+              data-testid={`shop-order-customer-${order.id}`}
+            >
+              {order.customerName}
+            </div>
+          ) : null}
           <div className="text-[11px] text-muted-foreground">
             {new Date(order.createdAt).toLocaleTimeString()} ·{" "}
             <span className="uppercase tracking-wide">{order.shopStatus.replace("_", " ")}</span>
@@ -259,7 +268,12 @@ function OrderCard({
         </div>
         <div className="text-right">
           <div className="text-[11px] text-muted-foreground">Shop payout</div>
-          <div className="font-semibold tabular-nums">{formatPrice(order.shopPayoutCents)}</div>
+          <div
+            className="font-semibold tabular-nums"
+            data-testid={`shop-order-payout-${order.id}`}
+          >
+            {formatPrice(order.shopPayoutCents)}
+          </div>
         </div>
       </div>
       <ul className="space-y-1 text-sm mb-2">

@@ -109,8 +109,9 @@ export function categoryMatches(option: CategoryOption, productCategory: string)
 // Customer-facing markup applied to listed prices. Mirrors the
 // `pricing.markupPercent` setting served by /api/settings; when the setting
 // loads we update this in-memory so the UI re-renders with live values. The
-// default keeps the existing 18% behaviour if /api/settings is unreachable.
-export let MARKUP_PCT = 0.18;
+// default mirrors the server-side DEFAULT_PRICING (20%) so prices look
+// consistent if /api/settings is unreachable.
+export let MARKUP_PCT = 0.2;
 export function setMarkupPercent(pct: number) {
   if (typeof pct === "number" && Number.isFinite(pct) && pct >= 0) {
     MARKUP_PCT = pct / 100;

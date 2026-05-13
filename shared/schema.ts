@@ -26,6 +26,18 @@ export const orders = sqliteTable("orders", {
   // the global pricing settings later change. Never exposes supplier cost.
   feeCents: integer("fee_cents").notNull().default(0),
   totalCents: integer("total_cents").notNull(),
+  // Economic snapshot at order time. Frozen so that later changes to a shop's
+  // PuffGo discount % or the global markup % never alter historical numbers.
+  // shopPayoutCents = sum(item.basePriceCents * qty) * (1 - shopDiscount%).
+  // puffGoMarkupCents = customerSubtotalPaid - itemsBaseTotal (the markup share
+  // PuffGo charged the customer on top of list).
+  // deliveryFeeCents = flat platform delivery (mirrors feeCents).
+  // puffGoProfitCents = customerSubtotalPaid - shopPayoutCents + deliveryFee.
+  // Tip is intentionally NOT included in profit — it passes through to driver.
+  shopPayoutCents: integer("shop_payout_cents").notNull().default(0),
+  puffGoMarkupCents: integer("puff_go_markup_cents").notNull().default(0),
+  deliveryFeeCents: integer("delivery_fee_cents").notNull().default(0),
+  puffGoProfitCents: integer("puff_go_profit_cents").notNull().default(0),
   // Delivery address (this order only)
   street: text("street").notNull(),
   unit: text("unit"),
@@ -86,6 +98,11 @@ export const insertOrderSchema = createInsertSchema(orders).omit({
   driverStatus: true,
   driverId: true,
   claimedAt: true,
+  // Snapshot fields are computed server-side at creation, never client-supplied.
+  shopPayoutCents: true,
+  puffGoMarkupCents: true,
+  deliveryFeeCents: true,
+  puffGoProfitCents: true,
 });
 
 export const PAYMENT_STATUSES = [
@@ -304,9 +321,17 @@ export const shops = sqliteTable("shops", {
   pin: text("pin").notNull().default(""),
   contactPhone: text("contact_phone").notNull().default(""),
   address: text("address").notNull().default(""),
-  // Per-order shop payout share applied when computing the shop-facing total.
-  // Cents-share is paid lump per item via JSON or fallback to percentage.
+  // Legacy field — kept for backward compatibility with older deployments.
+  // No longer surfaced in the admin UI or used in economic calculations.
+  // New installs default to 80 so existing reports/exports do not break.
   payoutPercent: integer("payout_percent").notNull().default(80),
+  // Percent (0–100) that PuffGo discounts off the listed product price to
+  // determine what the shop receives per item. Typical values 8–12. Replaces
+  // the legacy payoutPercent in all new economic calculations.
+  puffGoDiscountPercent: integer("puff_go_discount_percent").notNull().default(10),
+  // Free-form notes about any specialised loyalty program the shop runs.
+  // Admin-facing; never exposed to customers.
+  loyaltyProgram: text("loyalty_program").notNull().default(""),
   // Free-form weekly hours, e.g. "Mon-Sat 10am-9pm, Sun closed". Visible to
   // customers on the shop card so they know when pickup is available.
   storeHours: text("store_hours").notNull().default(""),
