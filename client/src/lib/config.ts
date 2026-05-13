@@ -5,7 +5,7 @@
 // Cash App is referenced as a payment instruction only — PuffGo does not
 // process payment, store payment data, or claim Cash App is compliant for
 // any particular use case.
-export const CASHTAG = "$SinCorpLLC";
+export const CASHTAG = "$PuffGoDelivery";
 
 // Driver handoff phone shown on confirmation. Placeholder.
 export const SUPPORT_PHONE = "(555) 420-7777";
