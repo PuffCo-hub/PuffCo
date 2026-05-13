@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Shell, Disclaimer } from "@/components/Shell";
 import {
   CATEGORY_OPTIONS,
@@ -100,27 +100,19 @@ function CategoryTile({
   active,
   onClick,
   products,
-  tileRef,
   children,
 }: {
   category: (typeof CATEGORY_OPTIONS)[number];
   active: boolean;
   onClick: () => void;
   products: Product[];
-  tileRef?: (el: HTMLDivElement | null) => void;
   children?: React.ReactNode;
 }) {
   const preview = products.find((p) => categoryMatches(category, p.category));
   return (
     <div
-      ref={tileRef}
       id={`category-${category.id}`}
       data-category-section={category.id}
-      // scroll-margin-top keeps the section title clear of the sticky
-      // header + sticky search bar (~128px on mobile) when the browser or
-      // anchor jumps to this element. This is a hard guarantee independent
-      // of our JS scroll code.
-      style={{ scrollMarginTop: "calc(128px + env(safe-area-inset-top))" }}
       className={`bg-card rounded-2xl overflow-hidden border transition ${active ? "border-primary/80" : "border-card-border"}`}
     >
       <button
@@ -165,120 +157,29 @@ export default function Menu() {
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [trendingBusy, setTrendingBusy] = useState<string | null>(null);
-  const browseSectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const categoryTileRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const pendingScrollIdRef = useRef<CategoryId | null>(null);
 
-  // Deterministic scroll for Android Chrome.
-  //
-  // Prior attempts used `scrollIntoView({behavior:'smooth'})` and double-rAF,
-  // which still failed on at least one user's device — Android Chrome
-  // routinely cancels in-flight smooth scrolls when images load above the
-  // target and the page reflows. The fix here is to (1) compute an absolute
-  // target y in document coords, (2) use an *instant* scroll so the browser
-  // can't cancel mid-animation, (3) account for the sticky header + sticky
-  // search bar so the section title is not hidden, and (4) re-aim several
-  // times after layout shifts settle (lazy images, font swap, etc).
-  function getStickyOffset() {
-    // 56px header (Shell.tsx min-h-[56px]) + 60px sticky search row + a
-    // small breathing margin. We read live values when possible so the
-    // offset stays correct if any of these change.
-    const header = document.querySelector(".app-header") as HTMLElement | null;
-    const headerH = header ? header.getBoundingClientRect().height : 56;
-    // The sticky search wrapper carries `.sticky` and our own marker.
-    const search = document.querySelector(
-      "[data-sticky-search]",
-    ) as HTMLElement | null;
-    const searchH = search ? search.getBoundingClientRect().height : 64;
-    return Math.round(headerH + searchH + 8);
-  }
+  // We deliberately do NOT scroll the page when a category chip is tapped.
+  // Past attempts to scroll the selected category into view broke repeatedly
+  // on Android Chrome and iOS Safari (smooth scrolls cancelled by image
+  // loads / sticky header reflow). Instead, the selected category's products
+  // are rendered in a dedicated section directly under the chip rail and
+  // above Trending — so the click is *always* visible without any scroll.
 
-  function scrollDocumentTo(top: number) {
-    // Use the document scroller directly so we never end up scrolling some
-    // ancestor with overflow:auto. Instant ("auto") behavior is the key —
-    // Android Chrome reliably honours instant scrolls even mid-image-load.
-    const clamped = Math.max(0, Math.floor(top));
-    try {
-      window.scrollTo({ top: clamped, left: 0, behavior: "auto" });
-    } catch {
-      // Very old browsers: positional fallback.
-      (document.scrollingElement || document.documentElement).scrollTop =
-        clamped;
-    }
-  }
-
-  function aimAtTile(id: CategoryId) {
-    const el = categoryTileRefs.current[id];
-    if (!el) return false;
-    const rect = el.getBoundingClientRect();
-    const offset = getStickyOffset();
-    const target = rect.top + window.scrollY - offset;
-    scrollDocumentTo(target);
-    return true;
-  }
-
-  function scrollToTarget(target: HTMLElement | null) {
-    if (!target) return;
-    const offset = getStickyOffset();
-    const top = target.getBoundingClientRect().top + window.scrollY - offset;
-    scrollDocumentTo(top);
-    // Re-aim once layout settles. We use *instant* corrections so we never
-    // stack smooth animations that Android cancels.
-    [60, 180, 360, 700].forEach((delay) => {
-      window.setTimeout(() => {
-        if (!target.isConnected) return;
-        const t =
-          target.getBoundingClientRect().top + window.scrollY - getStickyOffset();
-        scrollDocumentTo(t);
-      }, delay);
-    });
-  }
-
-  function scrollToBrowse() {
-    scrollToTarget(browseSectionRef.current);
-  }
-
-  function scrollToCategoryTile(id: CategoryId) {
-    if (!aimAtTile(id)) {
-      // Tile not mounted yet — remember the target and let the effect retry
-      // once the active category renders.
-      pendingScrollIdRef.current = id;
-      return;
-    }
-    // Stagger re-aims to absorb image/font-driven layout shifts. Each
-    // correction is an instant scroll, so Android cannot drop them.
-    [60, 180, 360, 700].forEach((delay) => {
-      window.setTimeout(() => aimAtTile(id), delay);
-    });
-  }
-
-  function openCategoryAndScroll(id: CategoryId) {
+  function openCategory(id: CategoryId) {
     setActiveCategory(id);
     setActiveSubcategory(null);
-    pendingScrollIdRef.current = id;
-    // First aim happens after the next layout commit (useLayoutEffect below).
+  }
+
+  function clearCategory() {
+    setActiveCategory(null);
+    setActiveSubcategory(null);
   }
 
   function showAllTrending() {
-    // "See all" near the trending row → clear category/search filters and
-    // bring the user to the full product grid via the browse section.
-    setActiveCategory(null);
-    setActiveSubcategory(null);
+    clearCategory();
     setQ("");
-    scrollToBrowse();
   }
-
-  // After a category becomes active, aim the scroll synchronously after the
-  // DOM has been mutated but before the browser paints. useLayoutEffect runs
-  // post-commit / pre-paint, so the tile's expanded subtree is already in
-  // the DOM and measurable.
-  useLayoutEffect(() => {
-    if (activeCategory && pendingScrollIdRef.current === activeCategory) {
-      scrollToCategoryTile(activeCategory);
-      pendingScrollIdRef.current = null;
-    }
-  }, [activeCategory]);
 
   const { data: shops = [] } = useQuery<Shop[]>({
     queryKey: ["/api/shops"],
@@ -325,16 +226,7 @@ export default function Menu() {
   }, [q, activeCategory, activeSubcategory, products]);
 
   function chooseCategory(id: CategoryId) {
-    setActiveCategory((current) => {
-      const next = current === id ? null : id;
-      // When the user is opening (not closing) a category tile, queue a
-      // scroll. The actual aim happens in useLayoutEffect once React has
-      // committed the expanded subtree to the DOM.
-      if (next !== null) {
-        pendingScrollIdRef.current = next;
-      }
-      return next;
-    });
+    setActiveCategory((current) => (current === id ? null : id));
     setActiveSubcategory(null);
   }
 
@@ -410,18 +302,19 @@ export default function Menu() {
         </div>
 
         {/* Quick category chip rail */}
-        <div className="mt-3 flex gap-2 overflow-x-auto -mx-4 px-4 pb-1">
+        <div
+          id="category-chip-rail"
+          className="mt-3 flex gap-2 overflow-x-auto -mx-4 px-4 pb-1"
+        >
           <button
-            onClick={() => {
-              setActiveCategory(null);
-              setActiveSubcategory(null);
-            }}
+            onClick={clearCategory}
             className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition ${
               !activeCategory
                 ? "bg-primary text-primary-foreground border-primary"
                 : "border-card-border bg-card/80 text-foreground hover-elevate"
             }`}
             data-testid="chip-category-all"
+            aria-pressed={!activeCategory}
           >
             All
           </button>
@@ -429,12 +322,8 @@ export default function Menu() {
             <button
               key={c.id}
               onClick={() => {
-                if (activeCategory === c.id) {
-                  setActiveCategory(null);
-                  setActiveSubcategory(null);
-                } else {
-                  openCategoryAndScroll(c.id);
-                }
+                if (activeCategory === c.id) clearCategory();
+                else openCategory(c.id);
               }}
               className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition ${
                 activeCategory === c.id
@@ -442,12 +331,105 @@ export default function Menu() {
                   : "border-card-border bg-card/80 text-foreground hover-elevate"
               }`}
               data-testid={`chip-quick-${c.id}`}
+              aria-pressed={activeCategory === c.id}
             >
               {c.label}
             </button>
           ))}
         </div>
       </div>
+
+      {/*
+        Selected-category section. Rendered immediately under the chip rail
+        so tapping a chip is instantly visible in-place — no scroll required.
+        This is the deliberate fix for the recurring Android/iOS scroll bug:
+        the content shows up where the user is already looking, instead of
+        relying on scroll behavior the browsers were cancelling.
+      */}
+      {activeCategory ? (() => {
+        const activeOption = CATEGORY_OPTIONS.find((c) => c.id === activeCategory);
+        if (!activeOption) return null;
+        const subcategories = activeOption.subcategories;
+        const items = filtered.filter((p) => categoryMatches(activeOption, p.category));
+        return (
+          <section
+            className="mb-5 rounded-2xl border border-primary/50 bg-card/90 p-3 shadow-sm"
+            data-testid={`section-selected-${activeOption.id}`}
+            aria-live="polite"
+          >
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-primary font-semibold">
+                  Showing
+                </div>
+                <h2 className="text-lg font-bold leading-tight truncate">
+                  {activeOption.label}
+                  {activeShop ? (
+                    <span className="text-muted-foreground font-medium">
+                      {" "}· {activeShop.name}
+                    </span>
+                  ) : null}
+                </h2>
+              </div>
+              <button
+                onClick={clearCategory}
+                className="shrink-0 text-xs font-semibold text-primary border border-primary/40 rounded-full px-3 py-1.5 hover-elevate"
+                data-testid="button-clear-category"
+                aria-label="Clear selected category"
+              >
+                Clear
+              </button>
+            </div>
+
+            {subcategories.length > 0 ? (
+              <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-2">
+                <button
+                  onClick={() => setActiveSubcategory(null)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                    activeSubcategory === null
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border bg-card text-foreground hover-elevate"
+                  }`}
+                  data-testid="chip-selected-sub-all"
+                >
+                  All {activeOption.label}
+                </button>
+                {subcategories.map((name) => (
+                  <button
+                    key={name}
+                    onClick={() =>
+                      setActiveSubcategory((current) => (current === name ? null : name))
+                    }
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                      activeSubcategory === name
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border bg-card text-foreground hover-elevate"
+                    }`}
+                    data-testid={`chip-selected-sub-${name
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, "-")}`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="grid gap-2 pt-1">
+              {items.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border/70 p-4 text-center text-xs text-muted-foreground">
+                  Nothing listed in {activeOption.label} yet
+                  {activeShop ? ` at ${activeShop.name}` : ""}. Send a write-in request below.
+                </div>
+              ) : (
+                items.map((p) => (
+                  <ProductCard key={p.id} p={p} onOpen={setDetailProduct} />
+                ))
+              )}
+            </div>
+          </section>
+        );
+      })() : null}
 
       <InstallBanner />
 
@@ -576,7 +558,6 @@ export default function Menu() {
             type="button"
             onClick={() => {
               searchInputRef.current?.focus();
-              scrollToBrowse();
             }}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 size-9 rounded-full bg-secondary flex items-center justify-center hover-elevate"
             data-testid="button-filter"
@@ -678,7 +659,7 @@ export default function Menu() {
         </div>
       </section>
 
-      <section className="mb-5" ref={browseSectionRef}>
+      <section className="mb-5">
         <h3 className="text-base font-semibold mb-2">
           {activeShop ? `Browse ${activeShop.name} by item type` : "Browse by item type"}
         </h3>
@@ -690,9 +671,6 @@ export default function Menu() {
               active={activeCategory === c.id}
               onClick={() => chooseCategory(c.id)}
               products={products}
-              tileRef={(el) => {
-                categoryTileRefs.current[c.id] = el;
-              }}
             >
               <div className="border-t border-border/60 px-3 pb-3 pt-2">
                 <div className="flex gap-2 overflow-x-auto pb-2 -mx-3 px-3">
