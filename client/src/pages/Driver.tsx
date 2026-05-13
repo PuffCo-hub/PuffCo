@@ -75,6 +75,15 @@ function nextDriverStatus(cur: string): string | null {
   return DRIVER_FLOW[idx + 1].key;
 }
 
+function mapsUrlFor(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+}
+
+function dropoffAddress(d: DriverOrder["dropoff"]): string {
+  const line1 = d.unit ? `${d.street}, Unit ${d.unit}` : d.street;
+  return [line1, d.city, d.state, d.zip].filter(Boolean).join(", ").trim();
+}
+
 export default function Driver() {
   const { toast } = useToast();
   const [pin, setPin] = useState("");
@@ -300,6 +309,21 @@ function ActiveCard({
       {order.pickup.address ? (
         <div className="text-xs mb-1 text-muted-foreground">{order.pickup.address}</div>
       ) : null}
+      {order.pickup.address ? (
+        <a
+          href={mapsUrlFor(order.pickup.address)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 mb-2 hover:bg-amber-500/20"
+          data-testid={`link-driver-nav-pickup-${order.id}`}
+        >
+          Navigate to pickup
+        </a>
+      ) : (
+        <div className="text-[11px] text-muted-foreground mb-2" data-testid={`text-driver-nav-pickup-unavailable-${order.id}`}>
+          Pickup address unavailable
+        </div>
+      )}
       <div className="text-xs mb-2">
         <span className="text-muted-foreground">For: </span>
         {order.dropoff.firstName} {order.dropoff.lastInitial}. · {order.dropoff.phone}
@@ -310,6 +334,21 @@ function ActiveCard({
         {order.dropoff.unit ? `, Unit ${order.dropoff.unit}` : ""},{" "}
         {order.dropoff.city}, {order.dropoff.state} {order.dropoff.zip}
       </div>
+      {order.dropoff.street ? (
+        <a
+          href={mapsUrlFor(dropoffAddress(order.dropoff))}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 mb-2 hover:bg-emerald-500/20"
+          data-testid={`link-driver-nav-dropoff-${order.id}`}
+        >
+          Navigate to delivery
+        </a>
+      ) : (
+        <div className="text-[11px] text-muted-foreground mb-2" data-testid={`text-driver-nav-dropoff-unavailable-${order.id}`}>
+          Delivery address unavailable
+        </div>
+      )}
       <div className="text-xs mb-2 text-muted-foreground">Items: {itemsLine}</div>
       {order.notes ? (
         <div className="text-[11px] text-muted-foreground mb-2">Note: {order.notes}</div>
