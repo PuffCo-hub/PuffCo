@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import type { Server } from "node:http";
-import { storage, DEFAULT_PRICING, DEFAULT_ORDER_SETTINGS, DEFAULT_NOTIFICATIONS, DEFAULT_COMPLIANCE } from "./storage";
+import { storage, DEFAULT_PRICING, DEFAULT_ORDER_SETTINGS, DEFAULT_NOTIFICATIONS, DEFAULT_COMPLIANCE, FLAT_DELIVERY_FEE_CENTS } from "./storage";
 import {
   insertOrderSchema,
   insertProductRequestSchema,
@@ -207,6 +207,12 @@ function publicProduct(p: any) {
 }
 
 function publicShop(s: any) {
+  // Surface storeCode/storeHours to customers — they help shoppers identify
+  // and plan around a shop's pickup window. Internal-only fields (pin, payout,
+  // pickup address, contact phone) and the now-deprecated per-shop fees are
+  // intentionally omitted. Per-shop service/delivery fees are kept on the
+  // record for backward compatibility but no longer affect the order total —
+  // a single global flat delivery fee is applied at checkout instead.
   return {
     id: s.id,
     name: s.name,
@@ -214,10 +220,10 @@ function publicShop(s: any) {
     serviceArea: s.serviceArea,
     active: !!s.active,
     open: !!s.open,
-    serviceFeeCents: s.serviceFeeCents,
-    deliveryFeeCents: s.deliveryFeeCents,
     imageUrl: s.imageUrl,
     accent: s.accent,
+    storeCode: s.storeCode || "",
+    storeHours: s.storeHours || "",
   };
 }
 
@@ -304,20 +310,12 @@ export async function registerRoutes(
       (await storage.getSetting<PricingSettings>("pricing")) || DEFAULT_PRICING;
     const breakdown = computePricing(parsed.data.subtotal, parsed.data.tipCents, pricing);
 
-    // Shop-level service/delivery fees apply additively in service_fee mode.
-    // In revenue_split mode the customer-facing total is unchanged so we only
-    // add shop fees to the recorded fee for reporting consistency.
-    let shopFeeCents = 0;
-    const shopId = (parsed.data as any).shopId || "default";
-    const shop = await storage.getShop(shopId);
-    if (shop) {
-      shopFeeCents = (shop.serviceFeeCents || 0) + (shop.deliveryFeeCents || 0);
-    }
-    const finalFeeCents = breakdown.feeCents + shopFeeCents;
-    const finalTotalCents =
-      pricing.mode === "service_fee"
-        ? breakdown.totalCents + shopFeeCents
-        : breakdown.totalCents;
+    // Flat delivery fee applies to every order regardless of shop. Per-shop
+    // service/delivery fees are no longer honoured — we keep the columns for
+    // backward compatibility but treat them as zero so admins don't need to
+    // manage them.
+    const finalFeeCents = breakdown.feeCents;
+    const finalTotalCents = breakdown.totalCents;
 
     for (const it of items) {
       await storage.adjustStock(it.id, -it.qty);
@@ -577,14 +575,16 @@ export async function registerRoutes(
       notes: z.string().max(1000).optional(),
       active: z.boolean().optional(),
       open: z.boolean().optional(),
-      serviceFeeCents: z.number().int().min(0).optional(),
-      deliveryFeeCents: z.number().int().min(0).optional(),
       imageUrl: z.string().max(2048).optional(),
       accent: z.string().max(32).optional(),
       pin: z.string().min(3).max(64).optional(),
       contactPhone: z.string().max(64).optional(),
       address: z.string().max(300).optional(),
       payoutPercent: z.number().int().min(0).max(100).optional(),
+      storeHours: z.string().max(300).optional(),
+      // storeCode is intentionally NOT accepted from clients — the server
+      // always auto-generates the next P-number to keep the sequence
+      // deterministic. Pass-through requests with storeCode are ignored.
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -594,8 +594,8 @@ export async function registerRoutes(
     const pin = parsed.data.pin && parsed.data.pin.length > 0
       ? parsed.data.pin
       : `shop-${Math.random().toString(36).slice(2, 6)}`;
-    const s = await storage.createShop({ ...parsed.data, id, pin });
-    await storage.appendAudit("shop.created", id, { name: s.name });
+    const s = await storage.createShop({ ...parsed.data, id, pin } as any);
+    await storage.appendAudit("shop.created", id, { name: s.name, storeCode: s.storeCode });
     res.json(s);
   });
   app.patch("/api/admin/shops/:id", async (req, res) => {
@@ -607,14 +607,13 @@ export async function registerRoutes(
       notes: z.string().max(1000).optional(),
       active: z.boolean().optional(),
       open: z.boolean().optional(),
-      serviceFeeCents: z.number().int().min(0).optional(),
-      deliveryFeeCents: z.number().int().min(0).optional(),
       imageUrl: z.string().max(2048).optional(),
       accent: z.string().max(32).optional(),
       pin: z.string().min(3).max(64).optional(),
       contactPhone: z.string().max(64).optional(),
       address: z.string().max(300).optional(),
       payoutPercent: z.number().int().min(0).max(100).optional(),
+      storeHours: z.string().max(300).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });

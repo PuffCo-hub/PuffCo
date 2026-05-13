@@ -158,8 +158,8 @@ export default function Cart() {
               </span>
             </div>
             <div className="text-[12px] text-muted-foreground mt-1.5 leading-snug">
-              Includes the configured service markup. Final total may include a
-              service or delivery fee set in store settings, plus tip.
+              Includes the configured service markup. A flat $2.50 delivery fee
+              applies to every order, plus tip.
             </div>
           </div>
 

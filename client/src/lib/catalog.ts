@@ -18,10 +18,10 @@ export type Shop = {
   serviceArea: string;
   active: boolean;
   open: boolean;
-  serviceFeeCents: number;
-  deliveryFeeCents: number;
   imageUrl: string;
   accent: string;
+  storeCode: string;
+  storeHours: string;
 };
 
 export type CategoryId =

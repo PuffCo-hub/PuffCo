@@ -6,8 +6,6 @@ import type {
   Product,
   ProductRequest,
   AuditLog,
-  Vendor,
-  Location,
   PricingSettings,
   OrderSettings,
   NotificationSettings,
@@ -44,11 +42,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Tab =
   | "products"
+  | "shops"
+  | "drivers"
   | "orders"
   | "writeins"
   | "settings"
-  | "audit"
-  | "vendors";
+  | "audit";
 
 type ProductForm = {
   id?: string;
@@ -187,7 +186,7 @@ function playAlertTone() {
 }
 
 export default function Admin() {
-  const [tab, setTab] = useState<Tab>("orders");
+  const [tab, setTab] = useState<Tab>("products");
   const [form, setForm] = useState<ProductForm>(blankForm);
   const [pin, setPin] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -239,22 +238,6 @@ export default function Admin() {
     refetchInterval: tab === "audit" ? 4000 : false,
     queryFn: async () => {
       const res = await adminRequest(pin, "GET", "/api/admin/audit?limit=200");
-      return res.json();
-    },
-  });
-  const { data: vendors = [] } = useQuery<Vendor[]>({
-    queryKey: ["/api/admin/vendors"],
-    enabled: authed,
-    queryFn: async () => {
-      const res = await adminRequest(pin, "GET", "/api/admin/vendors");
-      return res.json();
-    },
-  });
-  const { data: locations = [] } = useQuery<Location[]>({
-    queryKey: ["/api/admin/locations"],
-    enabled: authed,
-    queryFn: async () => {
-      const res = await adminRequest(pin, "GET", "/api/admin/locations");
       return res.json();
     },
   });
@@ -553,19 +536,20 @@ export default function Admin() {
       </div>
 
       <div className="flex gap-2 mb-5 overflow-x-auto">
+        <TabButton active={tab === "products"} onClick={() => setTab("products")}>Products</TabButton>
+        <TabButton active={tab === "shops"} onClick={() => setTab("shops")}>Shops</TabButton>
+        <TabButton active={tab === "drivers"} onClick={() => setTab("drivers")}>Drivers</TabButton>
         <TabButton active={tab === "orders"} onClick={() => setTab("orders")}>
           Orders {unackCount + flaggedCount > 0 ? <span className="ml-1 inline-flex items-center justify-center size-4 rounded-full bg-destructive text-destructive-foreground text-[10px]">{unackCount + flaggedCount}</span> : null}
         </TabButton>
-        <TabButton active={tab === "products"} onClick={() => setTab("products")}>Products</TabButton>
         <TabButton active={tab === "writeins"} onClick={() => setTab("writeins")}>Write-ins</TabButton>
         <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>Settings</TabButton>
         <TabButton active={tab === "audit"} onClick={() => setTab("audit")}>Audit</TabButton>
-        <TabButton active={tab === "vendors"} onClick={() => setTab("vendors")}>Shops</TabButton>
       </div>
 
       {tab === "products" && authed ? (
         <>
-          <ProductEditor form={form} setForm={setForm} onSave={() => saveProduct.mutate()} saving={saveProduct.isPending} error={saveProduct.error?.message} vendors={vendors} locations={locations} shops={adminShops} />
+          <ProductEditor form={form} setForm={setForm} onSave={() => saveProduct.mutate()} saving={saveProduct.isPending} error={saveProduct.error?.message} shops={adminShops} />
           <Section title="Current product list">
             {products.length === 0 ? (
               <Empty text="No products yet." />
@@ -997,15 +981,9 @@ export default function Admin() {
         <Empty text="Enter the admin PIN above to view the audit log." />
       ) : null}
 
-      {tab === "vendors" && authed ? (
-        <>
-          <ShopsPanel pin={pin} />
-          <DriversPanel pin={pin} />
-          <VendorsPanel pin={pin} vendors={vendors} locations={locations} />
-        </>
-      ) : tab === "vendors" ? (
-        <Empty text="Enter the admin PIN above to manage shops, drivers, vendors, and locations." />
-      ) : null}
+      {tab === "shops" && authed ? <ShopsPanel pin={pin} /> : null}
+
+      {tab === "drivers" && authed ? <DriversPanel pin={pin} /> : null}
     </Shell>
   );
 }
@@ -1030,8 +1008,6 @@ function ProductEditor({
   onSave,
   saving,
   error,
-  vendors,
-  locations,
   shops,
 }: {
   form: ProductForm;
@@ -1039,8 +1015,6 @@ function ProductEditor({
   onSave: () => void;
   saving: boolean;
   error?: string;
-  vendors: Vendor[];
-  locations: Location[];
   shops: ShopRow[];
 }) {
   const set = (key: keyof ProductForm, value: string | boolean) => setForm((f) => ({ ...f, [key]: value }));
@@ -1120,31 +1094,19 @@ function ProductEditor({
             data-testid="input-substitutes"
           />
         </Field>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Shop" hint="Which local shop carries this item">
-            <select className="h-10 rounded-md bg-background border border-input px-3 text-sm" value={form.shopId} onChange={(e) => set("shopId", e.target.value)} data-testid="select-shop">
-              {shops.length === 0 ? (
-                <option value="default">PuffGo Pasco</option>
-              ) : (
-                shops.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))
-              )}
-            </select>
-          </Field>
-          <Field label="Vendor">
-            <select className="h-10 rounded-md bg-background border border-input px-3 text-sm" value={form.vendorId} onChange={(e) => set("vendorId", e.target.value)} data-testid="select-vendor">
-              {vendors.length === 0 ? <option value="default">PuffGo Default</option> : vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Location">
-            <select className="h-10 rounded-md bg-background border border-input px-3 text-sm" value={form.locationId} onChange={(e) => set("locationId", e.target.value)} data-testid="select-location">
-              {locations.length === 0 ? <option value="default">Primary Store</option> : locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </Field>
-        </div>
+        <Field label="Shop" hint="Which local shop carries this item">
+          <select className="h-10 rounded-md bg-background border border-input px-3 text-sm w-full" value={form.shopId} onChange={(e) => set("shopId", e.target.value)} data-testid="select-shop">
+            {shops.length === 0 ? (
+              <option value="default">PuffGo Pasco</option>
+            ) : (
+              shops.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.storeCode ? `${s.storeCode} · ${s.name}` : s.name}
+                </option>
+              ))
+            )}
+          </select>
+        </Field>
         <Field label="Details" hint="Vapes: flavor + puff count. Carts: strain + size.">
           <Input value={form.detail} onChange={(e) => set("detail", e.target.value)} placeholder="Flavor: Blue Razz · Puff count: 25K" data-testid="input-detail" />
         </Field>
@@ -1485,14 +1447,19 @@ type ShopRow = {
   notes: string;
   active: boolean;
   open: boolean;
-  serviceFeeCents: number;
-  deliveryFeeCents: number;
+  // Legacy per-shop fee columns. Kept on the row for backward compatibility
+  // with older deployments; the admin UI no longer reads or writes them and
+  // checkout uses a single global flat delivery fee instead.
+  serviceFeeCents?: number;
+  deliveryFeeCents?: number;
   imageUrl: string;
   accent: string;
   pin?: string;
   contactPhone?: string;
   address?: string;
   payoutPercent?: number;
+  storeHours?: string;
+  storeCode?: string;
 };
 
 type DriverRow = {
@@ -1512,41 +1479,42 @@ function ShopsPanel({ pin }: { pin: string }) {
     },
   });
   const blank = {
-    id: "",
     name: "",
     blurb: "",
     serviceArea: "",
-    serviceFeeCents: "",
-    deliveryFeeCents: "",
+    storeHours: "",
     contactPhone: "",
     address: "",
     pin: "",
     payoutPercent: "80",
   };
   const [sForm, setSForm] = useState(blank);
+  const [addError, setAddError] = useState("");
   const addShop = useMutation({
     mutationFn: async () => {
       const payload: any = {
-        id: sForm.id || undefined,
-        name: sForm.name,
-        blurb: sForm.blurb,
-        serviceArea: sForm.serviceArea,
-        serviceFeeCents: Math.max(0, Math.round(Number(sForm.serviceFeeCents) || 0)),
-        deliveryFeeCents: Math.max(0, Math.round(Number(sForm.deliveryFeeCents) || 0)),
-        contactPhone: sForm.contactPhone,
-        address: sForm.address,
+        name: sForm.name.trim(),
+        blurb: sForm.blurb.trim(),
+        serviceArea: sForm.serviceArea.trim(),
+        storeHours: sForm.storeHours.trim(),
+        contactPhone: sForm.contactPhone.trim(),
+        address: sForm.address.trim(),
         payoutPercent: Math.max(0, Math.min(100, Math.round(Number(sForm.payoutPercent) || 0))),
       };
-      if (sForm.pin) payload.pin = sForm.pin;
+      if (sForm.pin.trim()) payload.pin = sForm.pin.trim();
       await adminRequest(pin, "POST", "/api/admin/shops", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/shops"] });
       queryClient.invalidateQueries({ queryKey: ["/api/shops"] });
       setSForm(blank);
+      setAddError("");
+    },
+    onError: (err: any) => {
+      setAddError(err?.message || "Could not add shop.");
     },
   });
-  const toggleShop = useMutation({
+  const updateShop = useMutation({
     mutationFn: async (args: { id: string; patch: Partial<ShopRow> }) => {
       await adminRequest(pin, "PATCH", `/api/admin/shops/${args.id}`, args.patch);
     },
@@ -1559,134 +1527,148 @@ function ShopsPanel({ pin }: { pin: string }) {
   return (
     <div className="space-y-5">
       <Section title="Shops">
-        <p className="text-xs text-muted-foreground mb-2">
-          Customer-facing local shops. Each shop has its own service fee and
-          delivery fee — those add to the order total when a shop is selected.
+        <p className="text-xs text-muted-foreground mb-3">
+          Customer-facing local shops. A flat $2.50 delivery fee is applied to
+          every order — per-shop service/delivery fees are no longer used and
+          have been removed from this form. Each shop gets an auto-generated
+          Store ID (P001, P002, …) when added.
         </p>
-        <div className="space-y-2 mb-3">
+
+        <div className="space-y-2 mb-4">
+          {shops.length === 0 ? <Empty text="No shops yet." /> : null}
           {shops.map((s) => (
             <div
               key={s.id}
               className="bg-card border border-card-border rounded-2xl p-3"
               data-testid={`row-shop-${s.id}`}
             >
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start justify-between gap-2 mb-2">
                 <div className="min-w-0">
                   <div className="font-semibold text-sm">{s.name}</div>
-                  <div className="font-mono text-[10px] text-muted-foreground">{s.id}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">
+                    Store ID: {s.storeCode || "—"} · internal: {s.id}
+                  </div>
                   {s.serviceArea ? (
                     <div className="text-[11px] text-muted-foreground mt-0.5">
                       {s.serviceArea}
                     </div>
                   ) : null}
+                  {s.storeHours ? (
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Hours: {s.storeHours}
+                    </div>
+                  ) : null}
                 </div>
-                <div className="flex flex-col items-end gap-1 text-[11px]">
-                  <div>
-                    Service fee:{" "}
-                    <span className="font-semibold tabular-nums">
-                      {formatPrice(s.serviceFeeCents || 0)}
-                    </span>
-                  </div>
-                  <div>
-                    Delivery fee:{" "}
-                    <span className="font-semibold tabular-nums">
-                      {formatPrice(s.deliveryFeeCents || 0)}
-                    </span>
-                  </div>
+                <div className="flex flex-col items-end gap-1">
+                  <Toggle
+                    checked={!!s.active}
+                    onClick={() =>
+                      updateShop.mutate({ id: s.id, patch: { active: !s.active } })
+                    }
+                    label="Active"
+                    testid={`toggle-shop-active-${s.id}`}
+                  />
+                  <Toggle
+                    checked={!!s.open}
+                    onClick={() =>
+                      updateShop.mutate({ id: s.id, patch: { open: !s.open } })
+                    }
+                    label="Open"
+                    testid={`toggle-shop-open-${s.id}`}
+                  />
                 </div>
               </div>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                <Toggle
-                  checked={!!s.active}
-                  onClick={() =>
-                    toggleShop.mutate({ id: s.id, patch: { active: !s.active } })
-                  }
-                  label="Active"
-                  testid={`toggle-shop-active-${s.id}`}
-                />
-                <Toggle
-                  checked={!!s.open}
-                  onClick={() =>
-                    toggleShop.mutate({ id: s.id, patch: { open: !s.open } })
-                  }
-                  label="Open"
-                  testid={`toggle-shop-open-${s.id}`}
-                />
-              </div>
-              <ShopEditFields shop={s} onSave={(patch) => toggleShop.mutate({ id: s.id, patch })} />
+              <ShopEditFields
+                shop={s}
+                onSave={(patch) => updateShop.mutate({ id: s.id, patch })}
+              />
             </div>
           ))}
-          {shops.length === 0 ? <Empty text="No shops yet." /> : null}
         </div>
-        <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
+
+        <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+          <h3 className="text-base font-semibold">Add a new shop</h3>
+          <p className="text-xs text-muted-foreground">
+            The Store ID (P001, P002, …) is generated automatically when the
+            shop is saved. Fill in the fields below — labels show what each one
+            is for.
+          </p>
+          <Field label="Shop name" hint="Customer-facing display name, e.g. PuffGo Pasco.">
             <Input
-              placeholder="shop-id (optional)"
-              value={sForm.id}
-              onChange={(e) => setSForm({ ...sForm, id: e.target.value })}
-              data-testid="input-shop-id"
-            />
-            <Input
-              placeholder="Shop name"
               value={sForm.name}
               onChange={(e) => setSForm({ ...sForm, name: e.target.value })}
+              placeholder="PuffGo Pasco"
               data-testid="input-shop-name"
             />
+          </Field>
+          <Field label="Short blurb" hint="One-line description shown under the shop name on the menu.">
             <Input
-              placeholder="Service area"
-              value={sForm.serviceArea}
-              onChange={(e) => setSForm({ ...sForm, serviceArea: e.target.value })}
-              data-testid="input-shop-area"
-            />
-            <Input
-              placeholder="Blurb"
               value={sForm.blurb}
               onChange={(e) => setSForm({ ...sForm, blurb: e.target.value })}
+              placeholder="Local smoke shop delivery across Pasco County."
               data-testid="input-shop-blurb"
             />
+          </Field>
+          <Field label="Service area" hint="Where this shop delivers — e.g. Pasco County, North Tampa.">
             <Input
-              placeholder="Service fee (cents)"
-              value={sForm.serviceFeeCents}
-              onChange={(e) => setSForm({ ...sForm, serviceFeeCents: e.target.value })}
-              data-testid="input-shop-service-fee"
+              value={sForm.serviceArea}
+              onChange={(e) => setSForm({ ...sForm, serviceArea: e.target.value })}
+              placeholder="Pasco County"
+              data-testid="input-shop-area"
             />
+          </Field>
+          <Field label="Store hours" hint="Free-form, shown to customers. Example: Mon–Sat 10am–9pm · Sun closed.">
             <Input
-              placeholder="Delivery fee (cents)"
-              value={sForm.deliveryFeeCents}
-              onChange={(e) => setSForm({ ...sForm, deliveryFeeCents: e.target.value })}
-              data-testid="input-shop-delivery-fee"
+              value={sForm.storeHours}
+              onChange={(e) => setSForm({ ...sForm, storeHours: e.target.value })}
+              placeholder="Mon–Sat 10am–9pm · Sun closed"
+              data-testid="input-shop-hours"
             />
+          </Field>
+          <Field label="Contact phone" hint="Internal phone for the driver/operator to reach the shop.">
             <Input
-              placeholder="Contact phone"
               value={sForm.contactPhone}
               onChange={(e) => setSForm({ ...sForm, contactPhone: e.target.value })}
+              placeholder="+1 555 555 5555"
               data-testid="input-shop-contact"
             />
+          </Field>
+          <Field label="Pickup address" hint="Internal address used by drivers for pickup. Not shown to customers.">
             <Input
-              placeholder="Internal address (driver pickup)"
               value={sForm.address}
               onChange={(e) => setSForm({ ...sForm, address: e.target.value })}
+              placeholder="123 Main St, Pasco FL 33544"
               data-testid="input-shop-address"
             />
+          </Field>
+          <Field label="Access PIN" hint="Used by the shop portal at /#/shop. Leave blank to auto-generate.">
             <Input
-              placeholder="Access PIN (blank = auto)"
               value={sForm.pin}
               onChange={(e) => setSForm({ ...sForm, pin: e.target.value })}
+              placeholder="(auto)"
               data-testid="input-shop-pin"
             />
+          </Field>
+          <Field label="Shop payout %" hint="What share of each order subtotal the shop keeps (0–100).">
             <Input
-              placeholder="Shop payout % (0-100)"
+              inputMode="numeric"
               value={sForm.payoutPercent}
               onChange={(e) => setSForm({ ...sForm, payoutPercent: e.target.value })}
+              placeholder="80"
               data-testid="input-shop-payout"
             />
-          </div>
+          </Field>
+          {addError ? (
+            <div className="text-xs text-destructive">{addError}</div>
+          ) : null}
           <Button
+            className="ember-button h-11 font-semibold"
             onClick={() => addShop.mutate()}
-            disabled={addShop.isPending || !sForm.name}
+            disabled={addShop.isPending || !sForm.name.trim()}
             data-testid="button-add-shop"
           >
-            <Building2 className="size-4 mr-2" /> Add shop
+            <Building2 className="size-4 mr-2" />
+            {addShop.isPending ? "Adding…" : "Add shop"}
           </Button>
         </div>
       </Section>
@@ -1701,44 +1683,86 @@ function ShopEditFields({
   shop: ShopRow;
   onSave: (patch: Partial<ShopRow>) => void;
 }) {
+  const [name, setName] = useState(shop.name || "");
+  const [blurb, setBlurb] = useState(shop.blurb || "");
+  const [serviceArea, setServiceArea] = useState(shop.serviceArea || "");
+  const [storeHours, setStoreHours] = useState(shop.storeHours || "");
   const [contact, setContact] = useState(shop.contactPhone || "");
   const [address, setAddress] = useState(shop.address || "");
-  const [pin, setPin] = useState(shop.pin || "");
+  const [pinValue, setPinValue] = useState(shop.pin || "");
   const [payout, setPayout] = useState(String(shop.payoutPercent ?? 80));
   return (
-    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-      <Input
-        value={contact}
-        onChange={(e) => setContact(e.target.value)}
-        placeholder="Contact phone"
-        data-testid={`input-edit-contact-${shop.id}`}
-      />
-      <Input
-        value={address}
-        onChange={(e) => setAddress(e.target.value)}
-        placeholder="Pickup address"
-        data-testid={`input-edit-address-${shop.id}`}
-      />
-      <Input
-        value={pin}
-        onChange={(e) => setPin(e.target.value)}
-        placeholder="Access PIN"
-        data-testid={`input-edit-pin-${shop.id}`}
-      />
-      <Input
-        value={payout}
-        onChange={(e) => setPayout(e.target.value)}
-        placeholder="Payout %"
-        data-testid={`input-edit-payout-${shop.id}`}
-      />
+    <div className="mt-2 space-y-2">
+      <Field label="Shop name">
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          data-testid={`input-edit-name-${shop.id}`}
+        />
+      </Field>
+      <Field label="Short blurb">
+        <Input
+          value={blurb}
+          onChange={(e) => setBlurb(e.target.value)}
+          data-testid={`input-edit-blurb-${shop.id}`}
+        />
+      </Field>
+      <Field label="Service area">
+        <Input
+          value={serviceArea}
+          onChange={(e) => setServiceArea(e.target.value)}
+          data-testid={`input-edit-area-${shop.id}`}
+        />
+      </Field>
+      <Field label="Store hours">
+        <Input
+          value={storeHours}
+          onChange={(e) => setStoreHours(e.target.value)}
+          placeholder="Mon–Sat 10am–9pm · Sun closed"
+          data-testid={`input-edit-hours-${shop.id}`}
+        />
+      </Field>
+      <Field label="Contact phone">
+        <Input
+          value={contact}
+          onChange={(e) => setContact(e.target.value)}
+          data-testid={`input-edit-contact-${shop.id}`}
+        />
+      </Field>
+      <Field label="Pickup address">
+        <Input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          data-testid={`input-edit-address-${shop.id}`}
+        />
+      </Field>
+      <Field label="Access PIN">
+        <Input
+          value={pinValue}
+          onChange={(e) => setPinValue(e.target.value)}
+          data-testid={`input-edit-pin-${shop.id}`}
+        />
+      </Field>
+      <Field label="Shop payout %">
+        <Input
+          inputMode="numeric"
+          value={payout}
+          onChange={(e) => setPayout(e.target.value)}
+          data-testid={`input-edit-payout-${shop.id}`}
+        />
+      </Field>
       <Button
         size="sm"
-        className="col-span-2"
+        className="w-full"
         onClick={() =>
           onSave({
+            name,
+            blurb,
+            serviceArea,
+            storeHours,
             contactPhone: contact,
             address,
-            pin,
+            pin: pinValue,
             payoutPercent: Math.max(0, Math.min(100, Math.round(Number(payout) || 0))),
           } as Partial<ShopRow>)
         }
@@ -1784,45 +1808,50 @@ function DriversPanel({ pin }: { pin: string }) {
   });
   return (
     <Section title="Drivers">
-      <p className="text-xs text-muted-foreground mb-2">
+      <p className="text-xs text-muted-foreground mb-3">
         Drivers use the /#/driver portal with their access code to claim and
         deliver orders. Reset a PIN here if a phone is lost or compromised.
       </p>
-      <div className="space-y-2 mb-3">
+      <div className="space-y-2 mb-4">
+        {drivers.length === 0 ? <Empty text="No drivers yet." /> : null}
         {drivers.map((d) => (
           <DriverEditRow key={d.id} driver={d} onSave={(patch) => updateDriver.mutate({ id: d.id, patch })} />
         ))}
-        {drivers.length === 0 ? <Empty text="No drivers yet." /> : null}
       </div>
-      <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2">
-        <div className="grid grid-cols-2 gap-2">
+      <div className="bg-card border border-card-border rounded-2xl p-4 space-y-3">
+        <h3 className="text-base font-semibold">Add a new driver</h3>
+        <Field label="Driver name" hint="Customer-facing driver name, e.g. Alex T.">
           <Input
-            placeholder="driver-id (optional)"
-            value={dForm.id}
-            onChange={(e) => setDForm({ ...dForm, id: e.target.value })}
-            data-testid="input-driver-id"
-          />
-          <Input
-            placeholder="Driver name"
             value={dForm.name}
             onChange={(e) => setDForm({ ...dForm, name: e.target.value })}
+            placeholder="Alex T."
             data-testid="input-driver-name"
           />
+        </Field>
+        <Field label="Driver phone" hint="Number used for SMS alerts when an order is ready for pickup.">
           <Input
-            placeholder="Phone"
             value={dForm.phone}
             onChange={(e) => setDForm({ ...dForm, phone: e.target.value })}
+            placeholder="+1 555 555 5555"
             data-testid="input-driver-phone"
           />
+        </Field>
+        <Field label="Access PIN" hint="Used by the driver portal at /#/driver. Leave blank to auto-generate.">
           <Input
-            placeholder="Access PIN (blank = auto)"
             value={dForm.pin}
             onChange={(e) => setDForm({ ...dForm, pin: e.target.value })}
+            placeholder="(auto)"
             data-testid="input-driver-pin"
           />
-        </div>
-        <Button onClick={() => addDriver.mutate()} disabled={addDriver.isPending || !dForm.name} data-testid="button-add-driver">
-          <Truck className="size-4 mr-2" /> Add driver
+        </Field>
+        <Button
+          className="ember-button h-11 font-semibold"
+          onClick={() => addDriver.mutate()}
+          disabled={addDriver.isPending || !dForm.name.trim()}
+          data-testid="button-add-driver"
+        >
+          <Truck className="size-4 mr-2" />
+          {addDriver.isPending ? "Adding…" : "Add driver"}
         </Button>
       </div>
     </Section>
@@ -1836,13 +1865,13 @@ function DriverEditRow({ driver, onSave }: { driver: DriverRow; onSave: (patch: 
   return (
     <div
       key={driver.id}
-      className="bg-card border border-card-border rounded-2xl p-3 text-xs space-y-2"
+      className="bg-card border border-card-border rounded-2xl p-3 space-y-2"
       data-testid={`row-driver-${driver.id}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="font-semibold text-sm">{driver.name}</div>
-          <div className="font-mono text-[10px] text-muted-foreground">{driver.id}</div>
+          <div className="font-mono text-[10px] text-muted-foreground">ID: {driver.id}</div>
         </div>
         <Toggle
           checked={active}
@@ -1851,121 +1880,32 @@ function DriverEditRow({ driver, onSave }: { driver: DriverRow; onSave: (patch: 
             setActive(next);
             onSave({ active: next });
           }}
-          label="Active"
+          label="Active status"
           testid={`toggle-driver-active-${driver.id}`}
         />
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <Field label="Driver phone">
         <Input
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          placeholder="Phone"
           data-testid={`input-edit-driver-phone-${driver.id}`}
         />
+      </Field>
+      <Field label="Access PIN">
         <Input
           value={pinValue}
           onChange={(e) => setPinValue(e.target.value)}
-          placeholder="PIN"
           data-testid={`input-edit-driver-pin-${driver.id}`}
         />
-      </div>
+      </Field>
       <Button
         size="sm"
+        className="w-full"
         onClick={() => onSave({ phone, pin: pinValue })}
         data-testid={`button-save-driver-${driver.id}`}
       >
         Save driver
       </Button>
-    </div>
-  );
-}
-
-function VendorsPanel({
-  pin,
-  vendors,
-  locations,
-}: {
-  pin: string;
-  vendors: Vendor[];
-  locations: Location[];
-}) {
-  const [vForm, setVForm] = useState({ id: "", name: "", contact: "" });
-  const [lForm, setLForm] = useState({ id: "", name: "", address: "" });
-  const addVendor = useMutation({
-    mutationFn: async () => {
-      await adminRequest(pin, "POST", "/api/admin/vendors", vForm);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/vendors"] });
-      setVForm({ id: "", name: "", contact: "" });
-    },
-  });
-  const addLocation = useMutation({
-    mutationFn: async () => {
-      await adminRequest(pin, "POST", "/api/admin/locations", lForm);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/locations"] });
-      setLForm({ id: "", name: "", address: "" });
-    },
-  });
-
-  return (
-    <div className="space-y-5">
-      <Section title="Vendors">
-        <p className="text-xs text-muted-foreground mb-2">
-          Today the store is single-vendor. The "default" vendor seeds
-          automatically. Add more vendors when expanding to a multi-vendor
-          marketplace — products can be reassigned in the editor.
-        </p>
-        <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2 mb-3">
-          {vendors.map((v) => (
-            <div key={v.id} className="flex justify-between text-sm py-1">
-              <span className="font-mono text-xs">{v.id}</span>
-              <span className="font-semibold">{v.name}</span>
-            </div>
-          ))}
-        </div>
-        <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2">
-          <div className="grid grid-cols-3 gap-2">
-            <Input placeholder="vendor-id" value={vForm.id} onChange={(e) => setVForm({ ...vForm, id: e.target.value })} data-testid="input-vendor-id" />
-            <Input placeholder="Name" value={vForm.name} onChange={(e) => setVForm({ ...vForm, name: e.target.value })} data-testid="input-vendor-name" />
-            <Input placeholder="Contact" value={vForm.contact} onChange={(e) => setVForm({ ...vForm, contact: e.target.value })} data-testid="input-vendor-contact" />
-          </div>
-          <Button
-            onClick={() => addVendor.mutate()}
-            disabled={addVendor.isPending || !vForm.id || !vForm.name}
-            data-testid="button-add-vendor"
-          >
-            <Building2 className="size-4 mr-2" /> Add vendor
-          </Button>
-        </div>
-      </Section>
-
-      <Section title="Locations">
-        <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2 mb-3">
-          {locations.map((l) => (
-            <div key={l.id} className="flex justify-between text-sm py-1">
-              <span className="font-mono text-xs">{l.id}</span>
-              <span className="font-semibold">{l.name}</span>
-            </div>
-          ))}
-        </div>
-        <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2">
-          <div className="grid grid-cols-3 gap-2">
-            <Input placeholder="location-id" value={lForm.id} onChange={(e) => setLForm({ ...lForm, id: e.target.value })} data-testid="input-location-id" />
-            <Input placeholder="Name" value={lForm.name} onChange={(e) => setLForm({ ...lForm, name: e.target.value })} data-testid="input-location-name" />
-            <Input placeholder="Address" value={lForm.address} onChange={(e) => setLForm({ ...lForm, address: e.target.value })} data-testid="input-location-address" />
-          </div>
-          <Button
-            onClick={() => addLocation.mutate()}
-            disabled={addLocation.isPending || !lForm.id || !lForm.name}
-            data-testid="button-add-location"
-          >
-            <Building2 className="size-4 mr-2" /> Add location
-          </Button>
-        </div>
-      </Section>
     </div>
   );
 }

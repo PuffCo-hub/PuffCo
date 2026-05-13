@@ -202,6 +202,8 @@ function tryAlter(sql: string) {
   "ALTER TABLE shops ADD COLUMN address TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE shops ADD COLUMN payout_percent INTEGER NOT NULL DEFAULT 80",
   "ALTER TABLE shops ADD COLUMN updated_at INTEGER",
+  "ALTER TABLE shops ADD COLUMN store_hours TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE shops ADD COLUMN store_code TEXT NOT NULL DEFAULT ''",
 ].forEach(tryAlter);
 
 // Backfill orderCode for any pre-existing rows (best effort — keeps customer
@@ -249,9 +251,13 @@ export const db = drizzle(sqlite);
 // Default operational settings — written into the settings table on first
 // boot so the admin UI has something to render. Operators can change them via
 // the settings endpoint.
+// Flat $2.50 delivery fee, no service fee. Applied globally on every order
+// regardless of shop so admins never have to manage per-shop fees.
+export const FLAT_DELIVERY_FEE_CENTS = 250;
+
 export const DEFAULT_PRICING: PricingSettings = {
   mode: "service_fee",
-  serviceFeeFlatCents: 0,
+  serviceFeeFlatCents: FLAT_DELIVERY_FEE_CENTS,
   serviceFeePercent: 0,
   revenueSplitPercent: 18,
   markupPercent: 18,
@@ -298,6 +304,47 @@ function seedSettingsIfMissing() {
   }
 }
 
+// Migrate pre-existing pricing settings so the global flat delivery fee
+// ($2.50, service_fee mode, no service-percent) is enforced on every order.
+// Only runs when pricing is still on legacy defaults (mode=service_fee with
+// a zero flat fee) so admins who explicitly customised pricing keep their
+// values.
+function migratePricingToFlatDelivery() {
+  try {
+    const row = db
+      .select()
+      .from(settingsTable)
+      .where(eq(settingsTable.key, "pricing"))
+      .get();
+    if (!row) return;
+    let current: PricingSettings | undefined;
+    try {
+      current = JSON.parse(row.value) as PricingSettings;
+    } catch {
+      current = undefined;
+    }
+    if (!current) return;
+    const legacyDefaults =
+      current.mode === "service_fee" &&
+      (current.serviceFeeFlatCents ?? 0) === 0 &&
+      (current.serviceFeePercent ?? 0) === 0;
+    if (legacyDefaults) {
+      const next: PricingSettings = {
+        ...current,
+        mode: "service_fee",
+        serviceFeeFlatCents: FLAT_DELIVERY_FEE_CENTS,
+        serviceFeePercent: 0,
+      };
+      db.update(settingsTable)
+        .set({ value: JSON.stringify(next), updatedAt: Date.now() })
+        .where(eq(settingsTable.key, "pricing"))
+        .run();
+    }
+  } catch (err) {
+    console.warn("[migrate] migratePricingToFlatDelivery:", (err as any)?.message);
+  }
+}
+
 function seedVendorAndLocationIfEmpty() {
   const now = Date.now();
   const v = db.select({ value: count() }).from(vendors).get();
@@ -333,6 +380,45 @@ function randomCode(len = 4) {
     out += Math.floor(Math.random() * 10);
   }
   return out;
+}
+
+// Find the next available P-code (P001, P002, ...). Scans store_code values
+// already in the table, picks the max numeric suffix, and returns max+1
+// padded to 3 digits. Falls back to P001 when the table is empty.
+export function nextStoreCode(): string {
+  try {
+    const rows = sqlite
+      .prepare("SELECT store_code FROM shops WHERE store_code LIKE 'P%'")
+      .all() as Array<{ store_code: string }>;
+    let max = 0;
+    for (const r of rows) {
+      const m = String(r.store_code || "").match(/^P(\d+)$/i);
+      if (m) {
+        const n = Number(m[1]);
+        if (Number.isFinite(n) && n > max) max = n;
+      }
+    }
+    return `P${String(max + 1).padStart(3, "0")}`;
+  } catch {
+    return "P001";
+  }
+}
+
+function backfillStoreCodes() {
+  try {
+    const rows = sqlite
+      .prepare(
+        "SELECT id FROM shops WHERE store_code = '' OR store_code IS NULL ORDER BY created_at ASC, id ASC",
+      )
+      .all() as Array<{ id: string }>;
+    const update = sqlite.prepare("UPDATE shops SET store_code = ? WHERE id = ?");
+    for (const r of rows) {
+      const code = nextStoreCode();
+      update.run(code, r.id);
+    }
+  } catch (err) {
+    console.warn("[migrate] backfillStoreCodes:", (err as any)?.message);
+  }
 }
 
 function backfillShopPins() {
@@ -607,8 +693,10 @@ seedProductsIfEmpty();
 seedVendorAndLocationIfEmpty();
 seedShopsIfEmpty();
 backfillShopPins();
+backfillStoreCodes();
 seedDriversIfEmpty();
 seedSettingsIfMissing();
+migratePricingToFlatDelivery();
 backfillStock();
 
 // ---------------------------------------------------------------------------
@@ -975,6 +1063,10 @@ export class DatabaseStorage implements IStorage {
   }
   async createShop(input: Partial<Shop> & { id: string; name: string }): Promise<Shop> {
     const now = Date.now();
+    const storeCode =
+      (input as any).storeCode && String((input as any).storeCode).trim().length > 0
+        ? String((input as any).storeCode).trim()
+        : nextStoreCode();
     return db
       .insert(shops)
       .values({
@@ -990,6 +1082,8 @@ export class DatabaseStorage implements IStorage {
         imageUrl: input.imageUrl ?? "",
         accent: input.accent ?? "#ff7a1a",
         createdAt: now,
+        storeHours: (input as any).storeHours ?? "",
+        storeCode,
       } as any)
       .returning()
       .get();
