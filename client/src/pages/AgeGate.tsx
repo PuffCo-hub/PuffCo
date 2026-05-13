@@ -2,7 +2,7 @@ import { useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { SmokeWordmark } from "@/components/SmokeWordmark";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, Truck, Clock, Sparkles } from "lucide-react";
+import { ShieldCheck, Truck, Clock, Sparkles, AlertTriangle } from "lucide-react";
 import neonDeliveryBg from "@/assets/brand/neon-delivery-bg.jpeg";
 
 export default function AgeGate() {
@@ -33,7 +33,30 @@ export default function AgeGate() {
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center w-full">
-        <div className="mb-1 flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] uppercase tracking-[0.22em] text-primary font-semibold">
+        <div
+          role="alert"
+          className="w-full max-w-sm rounded-2xl border-2 border-red-500/70 bg-red-600/20 px-4 py-4 text-left shadow-lg ring-1 ring-red-500/30"
+          data-testid="banner-prelaunch-agegate"
+        >
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="size-5 shrink-0 text-red-300" />
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase tracking-[0.22em] text-red-200 font-bold">
+                Pre-launch · Notice
+              </div>
+              <div className="mt-1 text-base font-extrabold leading-tight text-red-50">
+                Do not place orders yet.
+              </div>
+              <p className="mt-1.5 text-[13px] leading-snug text-red-50/95">
+                PuffGo will be fully functional on{" "}
+                <span className="font-bold underline decoration-red-300/70">07/04/2026</span>.
+                Orders placed before that date will not be fulfilled.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 mb-1 flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] uppercase tracking-[0.22em] text-primary font-semibold">
           <Sparkles className="size-3" />
           Pasco County only
         </div>
@@ -79,8 +102,11 @@ export default function AgeGate() {
             }}
           >
             <ShieldCheck className="size-4 mr-2" />
-            I'm 21+ · Browse menu
+            I'm 21+ · Preview menu
           </Button>
+          <p className="text-[11px] leading-snug text-red-200/90 text-center">
+            Preview only — ordering opens 07/04/2026.
+          </p>
           <button
             type="button"
             className="block w-full text-xs text-muted-foreground hover:text-foreground transition py-2"

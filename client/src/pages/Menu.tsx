@@ -10,7 +10,7 @@ import {
   type Shop,
 } from "@/lib/catalog";
 import { useCart } from "@/lib/cart-context";
-import { Search, Plus, Sparkles, ChevronRight, X, MapPin, SlidersHorizontal, Clock, Star, Store, Disc3 } from "lucide-react";
+import { Search, Plus, Sparkles, ChevronRight, X, MapPin, SlidersHorizontal, Clock, Star, Store, Disc3, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -117,7 +117,17 @@ function CategoryTile({
         data-testid={`button-category-${category.id}`}
       >
         <div className="flex items-center gap-3">
-          {preview ? (
+          {category.thumbnail ? (
+            <div className="size-12 shrink-0 overflow-hidden rounded-2xl bg-white border border-black/5">
+              <img
+                src={category.thumbnail}
+                alt=""
+                aria-hidden
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            </div>
+          ) : preview ? (
             <ProductImage product={preview} compact />
           ) : category.fallbackIcon === "grinder" ? (
             <div className="size-12 shrink-0 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
@@ -233,6 +243,29 @@ export default function Menu() {
 
   return (
     <Shell>
+      <div
+        role="alert"
+        className="-mx-4 mb-4 border-y-2 border-red-500/70 bg-red-600/20 px-4 py-3.5 shadow-lg"
+        data-testid="banner-prelaunch-menu"
+      >
+        <div className="flex items-start gap-2.5">
+          <AlertTriangle className="size-5 shrink-0 text-red-300 mt-0.5" />
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-red-200 font-bold">
+              Pre-launch · Notice
+            </div>
+            <div className="mt-0.5 text-base font-extrabold leading-tight text-red-50">
+              Do not place orders yet.
+            </div>
+            <p className="mt-1 text-[12.5px] leading-snug text-red-50/95">
+              PuffGo will be fully functional on{" "}
+              <span className="font-bold underline decoration-red-300/70">07/04/2026</span>.
+              You can browse the menu, but any orders placed before that date will not be fulfilled.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Premium hero — smoky backdrop, delivery context, and a quick category */}
       {/* chip rail for instant filtering before the search/trending sections.   */}
       <div className="relative -mx-4 px-4 pt-1 pb-4 mb-4 overflow-hidden">

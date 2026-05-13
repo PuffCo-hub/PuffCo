@@ -3,6 +3,8 @@
 // raw row with derived `available` and `lowStock` flags so the customer side
 // can disable add-to-cart instantly when stock hits zero.
 import type { Product as DbProduct } from "@shared/schema";
+import flowerThumb from "@/assets/categories/flower.jpg";
+import accessoriesThumb from "@/assets/categories/accessories.jpg";
 
 export type Product = DbProduct & {
   available: boolean;
@@ -44,6 +46,10 @@ export type CategoryOption = {
   // tile when no product in this section has loaded yet, so the tile still
   // has a representative thumbnail. Resolved in Menu.tsx.
   fallbackIcon?: "grinder" | "leaf" | "flame" | "package";
+  // Optional static thumbnail used by the customer Menu's category tile.
+  // When set, the tile shows this image instead of the first product preview
+  // or the fallback icon.
+  thumbnail?: string;
 };
 
 export const CATEGORY_OPTIONS: CategoryOption[] = [
@@ -64,6 +70,7 @@ export const CATEGORY_OPTIONS: CategoryOption[] = [
     label: "Flower",
     helper: "Hemp and CBD flower",
     subcategories: ["Indica", "Sativa", "Hybrid", "Pre-Rolls", "Eighths", "Quarters"],
+    thumbnail: flowerThumb,
   },
   {
     id: "glass",
@@ -87,6 +94,7 @@ export const CATEGORY_OPTIONS: CategoryOption[] = [
     helper: "Lighters, grinders, batteries, and tools",
     subcategories: ["Lighters", "Grinders", "Batteries", "Torches", "Trays", "Storage", "Cleaning", "Scales", "Tips", "Tools"],
     fallbackIcon: "grinder",
+    thumbnail: accessoriesThumb,
   },
 ];
 
