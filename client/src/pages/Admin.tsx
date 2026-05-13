@@ -1039,11 +1039,15 @@ function ProductEditor({
       </div>
 
       <div className="grid gap-3">
-        <Field label="Spoken order name" hint="Example: Geek Bar Pulse X Strawberry B-Pop 25K">
-          <Input value={form.orderName} onChange={(e) => set("orderName", e.target.value)} data-testid="input-order-name" />
-        </Field>
-        <Field label="Display name">
-          <Input value={form.name} onChange={(e) => set("name", e.target.value)} data-testid="input-product-name" />
+        <Field label="Product name" hint="Example: Geek Bar Pulse X Strawberry B-Pop 25K">
+          <Input
+            value={form.orderName || form.name}
+            onChange={(e) => {
+              const v = e.target.value;
+              setForm((f) => ({ ...f, orderName: v, name: v }));
+            }}
+            data-testid="input-product-name"
+          />
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Brand">
