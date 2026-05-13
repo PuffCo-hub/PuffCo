@@ -1,8 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { applyMarkup, setMarkupPercent, type Product } from "./catalog";
+import { applyMarkup, setMarkupPercent, type Product, type Shop } from "./catalog";
 import { apiRequest } from "./queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export type CartLine = {
   product: Product;
@@ -52,6 +63,11 @@ type Ctx = {
   selectedShopId: string | null;
   setSelectedShopId: (id: string | null) => void;
   cartShopId: string | null;
+
+  // Looked-up name of the cart's current shop (or null if the cart is empty
+  // or the shop list hasn't loaded yet). Surfaced so the cart page and
+  // conflict dialogs can show humans the shop name, not the id.
+  cartShopName: string | null;
 };
 
 const CartContext = createContext<Ctx | null>(null);
@@ -83,7 +99,34 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // Cart is single-shop. Derive the cart's shop from the first line so the UI
   // can warn before the customer adds something from a second shop.
-  const cartShopId = lines.length > 0 ? ((lines[0].product as any).shopId || null) : null;
+  const cartShopId = lines.length > 0 ? (lines[0].product.shopId || null) : null;
+
+  // Shop list is shared by the conflict dialog so we can show the human name
+  // of both the cart's shop and the attempted-but-blocked shop. Cached in
+  // React Query so we don't refetch on every add.
+  const { data: shops = [] } = useQuery<Shop[]>({
+    queryKey: ["/api/shops"],
+    staleTime: 60_000,
+  });
+  const shopName = useCallback(
+    (id: string | null) => (id ? shops.find((s) => s.id === id)?.name || null : null),
+    [shops],
+  );
+  const cartShopName = shopName(cartShopId);
+
+  // When an add-to-cart hits a different-shop conflict, we stash the would-be
+  // line here. The dialog rendered below the provider lets the customer either
+  // keep their current order (cancel) or clear it and immediately add the new
+  // item from the new shop.
+  type PendingConflict = {
+    product: Product;
+    qty: number;
+    currentShopId: string;
+    currentShopName: string | null;
+    attemptedShopId: string;
+    attemptedShopName: string | null;
+  };
+  const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
 
   const subtotalCents = useMemo(
     () =>
@@ -102,14 +145,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const addItem = useCallback(
     (p: Product, qty = 1) => {
       // Prevent mixed-shop carts. If the customer tries to add from a
-      // different shop, surface a clear toast and keep the existing cart.
-      const newShopId = (p as any).shopId || null;
+      // different shop, open a blocking dialog explaining the rule and
+      // offering an explicit "clear and switch" path. We do NOT add the item
+      // silently — the customer must make an active choice so nobody can
+      // later claim they were misled into a mixed-order checkout.
+      const newShopId = p.shopId || null;
       if (lines.length > 0 && cartShopId && newShopId && newShopId !== cartShopId) {
-        toast({
-          title: "Different shop",
-          description:
-            "Your cart already has items from another shop. Finish or clear that order before adding from a new shop.",
-          duration: 3500,
+        setPendingConflict({
+          product: p,
+          qty,
+          currentShopId: cartShopId,
+          currentShopName: shopName(cartShopId),
+          attemptedShopId: newShopId,
+          attemptedShopName: shopName(newShopId),
         });
         return;
       }
@@ -178,7 +226,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       });
       lastToastIdRef.current = t.id;
     },
-    [toast, dismiss, navigate, lines.length, cartShopId]
+    [toast, dismiss, navigate, lines.length, cartShopId, shopName]
   );
   const removeItem = (id: string) =>
     setLines((prev) => prev.filter((l) => l.product.id !== id));
@@ -232,9 +280,81 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         selectedShopId,
         setSelectedShopId,
         cartShopId,
+        cartShopName,
       }}
     >
       {children}
+      <AlertDialog
+        open={pendingConflict !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingConflict(null);
+        }}
+      >
+        <AlertDialogContent
+          className="sm:max-w-md"
+          data-testid="dialog-shop-conflict"
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>One shop per order</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  Your cart already has items from{" "}
+                  <span className="font-semibold text-foreground">
+                    {pendingConflict?.currentShopName || "your current shop"}
+                  </span>
+                  . You can only check out from one shop at a time.
+                </p>
+                <p>
+                  To order from{" "}
+                  <span className="font-semibold text-foreground">
+                    {pendingConflict?.attemptedShopName || "this other shop"}
+                  </span>
+                  , please finish or clear your current order first.
+                  Orders from different shops can&rsquo;t be combined — each shop
+                  is a separate trip and carries its own{" "}
+                  <span className="font-semibold text-foreground">
+                    $2.50 delivery fee
+                  </span>
+                  .
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel data-testid="button-shop-conflict-keep">
+              Keep current order
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-shop-conflict-switch"
+              onClick={() => {
+                if (!pendingConflict) return;
+                // Switch shops: drop everything (cart + address + tip) so the
+                // customer starts fresh, then add the new item. We also point
+                // the browse selector at the new shop so the rest of the menu
+                // narrows to its inventory automatically.
+                const p = pendingConflict.product;
+                const qty = pendingConflict.qty;
+                const newShopId = pendingConflict.attemptedShopId;
+                setLines([{ product: p, qty }]);
+                setAddress(null);
+                setTipCents(0);
+                setSelectedShopId(newShopId);
+                setPendingConflict(null);
+                toast({
+                  title: "Cart switched",
+                  description: `Now ordering from ${
+                    pendingConflict.attemptedShopName || "the new shop"
+                  }.`,
+                  duration: 2800,
+                });
+              }}
+            >
+              Clear cart &amp; switch shop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </CartContext.Provider>
   );
 }

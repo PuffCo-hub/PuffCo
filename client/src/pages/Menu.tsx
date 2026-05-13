@@ -436,34 +436,45 @@ export default function Menu() {
       {/* Active shop indicator — clear "shopping at" pill with a way to back out. */}
       {activeShop ? (
         <div
-          className="mb-4 rounded-2xl border border-primary/40 bg-primary/10 p-3 flex items-center gap-3"
+          className="mb-4 rounded-2xl border border-primary/40 bg-primary/10 p-3"
           data-testid="banner-active-shop"
         >
-          <div className="size-9 rounded-xl bg-primary/20 flex items-center justify-center text-primary shrink-0">
-            <Store className="size-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-primary/80 font-semibold">
-              Shopping at
+          <div className="flex items-center gap-3">
+            <div className="size-9 rounded-xl bg-primary/20 flex items-center justify-center text-primary shrink-0">
+              <Store className="size-5" />
             </div>
-            <div className="font-semibold text-sm truncate">{activeShop.name}</div>
-            {activeShop.serviceArea ? (
-              <div className="text-[11px] text-muted-foreground truncate">
-                {activeShop.serviceArea}
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] uppercase tracking-wider text-primary/80 font-semibold">
+                Shopping at
               </div>
-            ) : null}
+              <div className="font-semibold text-sm truncate">{activeShop.name}</div>
+              {activeShop.serviceArea ? (
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {activeShop.serviceArea}
+                </div>
+              ) : null}
+            </div>
+            <button
+              onClick={() => {
+                setSelectedShopId(null);
+                setActiveCategory(null);
+                setActiveSubcategory(null);
+              }}
+              className="text-xs font-semibold text-primary hover-elevate rounded-full px-3 py-1.5 border border-primary/30"
+              data-testid="button-clear-shop"
+            >
+              Change shop
+            </button>
           </div>
-          <button
-            onClick={() => {
-              setSelectedShopId(null);
-              setActiveCategory(null);
-              setActiveSubcategory(null);
-            }}
-            className="text-xs font-semibold text-primary hover-elevate rounded-full px-3 py-1.5 border border-primary/30"
-            data-testid="button-clear-shop"
+          <div
+            className="mt-2.5 rounded-xl bg-background/40 border border-primary/20 px-3 py-2 text-[12px] leading-snug text-foreground/90"
+            data-testid="notice-one-shop-active"
           >
-            Change shop
-          </button>
+            <span className="font-semibold text-primary">One shop per order.</span>{" "}
+            To add items from a different shop, place a separate order — each
+            shop is its own trip with its own{" "}
+            <span className="font-semibold">$2.50 delivery fee</span>.
+          </div>
         </div>
       ) : null}
 
@@ -480,6 +491,19 @@ export default function Menu() {
                 Pick a local shop to browse only its inventory.
               </p>
             </div>
+          </div>
+          <div
+            className="mb-2 rounded-2xl border border-primary/30 bg-primary/10 px-3 py-2.5 text-[12.5px] leading-snug text-foreground/90"
+            data-testid="notice-one-shop-rule"
+          >
+            <div className="font-semibold text-primary">
+              One shop per order.
+            </div>
+            <p className="mt-0.5">
+              You can only check out from one shop at a time. To order from
+              another location, place a separate order — each shop has its own{" "}
+              <span className="font-semibold">$2.50 delivery fee</span>.
+            </p>
           </div>
           <div className="grid gap-2">
             {shops.map((s) => (

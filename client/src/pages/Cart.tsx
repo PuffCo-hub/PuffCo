@@ -2,7 +2,7 @@ import { Shell, StickyFooter, Disclaimer } from "@/components/Shell";
 import { useCart } from "@/lib/cart-context";
 import { applyMarkup, formatPrice, type Product } from "@/lib/catalog";
 import { Button } from "@/components/ui/button";
-import { Minus, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { Minus, Plus, Trash2, AlertTriangle, Store } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { ProductImage } from "@/components/ProductImage";
 import { useQuery } from "@tanstack/react-query";
@@ -10,7 +10,7 @@ import { useMemo, useState } from "react";
 import { SubstitutionDialog } from "@/components/SubstitutionDialog";
 
 export default function Cart() {
-  const { lines, setQty, removeItem, replaceItem, subtotalCents } = useCart();
+  const { lines, setQty, removeItem, replaceItem, subtotalCents, cartShopName, cartShopId } = useCart();
   const [, navigate] = useLocation();
   const [substitutingId, setSubstitutingId] = useState<string | null>(null);
 
@@ -58,6 +58,36 @@ export default function Cart() {
         </div>
       ) : (
         <>
+          {cartShopId ? (
+            <div
+              className="rounded-2xl border border-primary/40 bg-primary/10 p-3 mb-3"
+              data-testid="banner-cart-shop"
+            >
+              <div className="flex items-start gap-3">
+                <div className="size-9 rounded-xl bg-primary/20 flex items-center justify-center text-primary shrink-0">
+                  <Store className="size-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] uppercase tracking-wider text-primary/90 font-semibold">
+                    Order location
+                  </div>
+                  <div
+                    className="font-semibold text-sm truncate"
+                    data-testid="text-cart-shop-name"
+                  >
+                    {cartShopName || cartShopId}
+                  </div>
+                  <div className="text-[12px] leading-snug text-foreground/90 mt-1.5">
+                    <span className="font-semibold text-primary">One shop per order.</span>{" "}
+                    To add items from a different location, place a separate order
+                    — each shop has its own{" "}
+                    <span className="font-semibold">$2.50 delivery fee</span>.
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {unavailableLines.length > 0 ? (
             <div
               className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 mb-3 flex items-start gap-2"

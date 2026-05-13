@@ -31,7 +31,7 @@ function extractFacts(detail: string): { label: string; value: string }[] {
 }
 
 export function ProductDetailModal({ product, open, onOpenChange }: Props) {
-  const { addItem, lines } = useCart();
+  const { addItem, lines, cartShopId } = useCart();
   const [, navigate] = useLocation();
   const [qty, setQty] = useState(1);
   const [justAdded, setJustAdded] = useState(false);
@@ -52,12 +52,24 @@ export function ProductDetailModal({ product, open, onOpenChange }: Props) {
   const inCart = lines.find((l) => l.product.id === product.id)?.qty ?? 0;
   const facts = extractFacts(product.detail);
   const unavailable = !product.available;
+  // Detect cross-shop conflict so we can show a clear inline notice on the
+  // detail sheet and avoid flashing "Added to cart" when the cart-context
+  // guard will intercept the add with the conflict dialog.
+  const productShopId = product.shopId || null;
+  const crossShop =
+    lines.length > 0 &&
+    !!cartShopId &&
+    !!productShopId &&
+    productShopId !== cartShopId;
 
   function handleAdd() {
     if (!product || unavailable || busy) return;
     setBusy(true);
     addItem(product, qty);
-    setJustAdded(true);
+    // Only flash the success state when this would NOT be intercepted by the
+    // cross-shop guard. When the guard fires, the global confirm dialog is
+    // shown by CartProvider instead.
+    if (!crossShop) setJustAdded(true);
     // Keep the button disabled briefly so a second tap doesn't double-add.
     window.setTimeout(() => setBusy(false), 700);
     window.setTimeout(() => setJustAdded(false), 1600);
@@ -200,6 +212,20 @@ export function ProductDetailModal({ product, open, onOpenChange }: Props) {
             ) : null}
           </div>
 
+          {crossShop ? (
+            <div
+              className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12.5px] leading-snug text-amber-100/95"
+              data-testid="notice-modal-cross-shop"
+            >
+              <span className="font-semibold text-amber-200">
+                Different shop.
+              </span>{" "}
+              Your cart is from another shop — only one shop per order.
+              Tap add and we&rsquo;ll ask whether to start a separate order or
+              clear your cart and switch. Each shop is a separate trip with its
+              own $2.50 delivery fee.
+            </div>
+          ) : null}
           <div className="mt-4 flex flex-col gap-2">
             <Button
               className="ember-button h-12 w-full text-base"
@@ -213,6 +239,8 @@ export function ProductDetailModal({ product, open, onOpenChange }: Props) {
                 </>
               ) : unavailable ? (
                 "Out of stock"
+              ) : crossShop ? (
+                <>Switch shop &amp; add {qty}</>
               ) : (
                 <>
                   Add {qty} to cart · {formatPrice(est * qty)}
