@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Shell, Disclaimer } from "@/components/Shell";
 import {
   CATEGORY_OPTIONS,
@@ -114,7 +114,13 @@ function CategoryTile({
   return (
     <div
       ref={tileRef}
-      id={`category-tile-${category.id}`}
+      id={`category-${category.id}`}
+      data-category-section={category.id}
+      // scroll-margin-top keeps the section title clear of the sticky
+      // header + sticky search bar (~128px on mobile) when the browser or
+      // anchor jumps to this element. This is a hard guarantee independent
+      // of our JS scroll code.
+      style={{ scrollMarginTop: "calc(128px + env(safe-area-inset-top))" }}
       className={`bg-card rounded-2xl overflow-hidden border transition ${active ? "border-primary/80" : "border-card-border"}`}
     >
       <button
@@ -164,31 +170,68 @@ export default function Menu() {
   const categoryTileRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const pendingScrollIdRef = useRef<CategoryId | null>(null);
 
-  // Robust scroll: wait through two animation frames so React has committed the
-  // expanded subtree to the DOM, then use scrollIntoView on the tile itself
-  // (not the parent section). Older Android Chrome ignored smooth scrolls that
-  // fired before layout settled — this guarantees the target is in the DOM and
-  // measured before we animate to it.
+  // Deterministic scroll for Android Chrome.
+  //
+  // Prior attempts used `scrollIntoView({behavior:'smooth'})` and double-rAF,
+  // which still failed on at least one user's device — Android Chrome
+  // routinely cancels in-flight smooth scrolls when images load above the
+  // target and the page reflows. The fix here is to (1) compute an absolute
+  // target y in document coords, (2) use an *instant* scroll so the browser
+  // can't cancel mid-animation, (3) account for the sticky header + sticky
+  // search bar so the section title is not hidden, and (4) re-aim several
+  // times after layout shifts settle (lazy images, font swap, etc).
+  function getStickyOffset() {
+    // 56px header (Shell.tsx min-h-[56px]) + 60px sticky search row + a
+    // small breathing margin. We read live values when possible so the
+    // offset stays correct if any of these change.
+    const header = document.querySelector(".app-header") as HTMLElement | null;
+    const headerH = header ? header.getBoundingClientRect().height : 56;
+    // The sticky search wrapper carries `.sticky` and our own marker.
+    const search = document.querySelector(
+      "[data-sticky-search]",
+    ) as HTMLElement | null;
+    const searchH = search ? search.getBoundingClientRect().height : 64;
+    return Math.round(headerH + searchH + 8);
+  }
+
+  function scrollDocumentTo(top: number) {
+    // Use the document scroller directly so we never end up scrolling some
+    // ancestor with overflow:auto. Instant ("auto") behavior is the key —
+    // Android Chrome reliably honours instant scrolls even mid-image-load.
+    const clamped = Math.max(0, Math.floor(top));
+    try {
+      window.scrollTo({ top: clamped, left: 0, behavior: "auto" });
+    } catch {
+      // Very old browsers: positional fallback.
+      (document.scrollingElement || document.documentElement).scrollTop =
+        clamped;
+    }
+  }
+
+  function aimAtTile(id: CategoryId) {
+    const el = categoryTileRefs.current[id];
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const offset = getStickyOffset();
+    const target = rect.top + window.scrollY - offset;
+    scrollDocumentTo(target);
+    return true;
+  }
+
   function scrollToTarget(target: HTMLElement | null) {
     if (!target) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        try {
-          target.scrollIntoView({ behavior: "smooth", block: "start" });
-        } catch {
-          // Older browsers: fall back to an absolute scroll.
-          const top =
-            target.getBoundingClientRect().top + window.scrollY - 12;
-          window.scrollTo({ top, behavior: "smooth" });
-        }
-        // A delayed nudge: Android sometimes interrupts the first smooth scroll
-        // when an image lazily loads above the target. Re-aim after ~250ms to
-        // ensure the user lands on the expanded content.
-        window.setTimeout(() => {
-          const top = target.getBoundingClientRect().top + window.scrollY - 12;
-          window.scrollTo({ top, behavior: "smooth" });
-        }, 260);
-      });
+    const offset = getStickyOffset();
+    const top = target.getBoundingClientRect().top + window.scrollY - offset;
+    scrollDocumentTo(top);
+    // Re-aim once layout settles. We use *instant* corrections so we never
+    // stack smooth animations that Android cancels.
+    [60, 180, 360, 700].forEach((delay) => {
+      window.setTimeout(() => {
+        if (!target.isConnected) return;
+        const t =
+          target.getBoundingClientRect().top + window.scrollY - getStickyOffset();
+        scrollDocumentTo(t);
+      }, delay);
     });
   }
 
@@ -197,21 +240,24 @@ export default function Menu() {
   }
 
   function scrollToCategoryTile(id: CategoryId) {
-    const el = categoryTileRefs.current[id];
-    if (el) {
-      scrollToTarget(el);
-    } else {
+    if (!aimAtTile(id)) {
       // Tile not mounted yet — remember the target and let the effect retry
       // once the active category renders.
       pendingScrollIdRef.current = id;
+      return;
     }
+    // Stagger re-aims to absorb image/font-driven layout shifts. Each
+    // correction is an instant scroll, so Android cannot drop them.
+    [60, 180, 360, 700].forEach((delay) => {
+      window.setTimeout(() => aimAtTile(id), delay);
+    });
   }
 
   function openCategoryAndScroll(id: CategoryId) {
     setActiveCategory(id);
     setActiveSubcategory(null);
     pendingScrollIdRef.current = id;
-    scrollToCategoryTile(id);
+    // First aim happens after the next layout commit (useLayoutEffect below).
   }
 
   function showAllTrending() {
@@ -223,16 +269,14 @@ export default function Menu() {
     scrollToBrowse();
   }
 
-  // After a category becomes active, re-aim the scroll once its expanded
-  // content has mounted. This is the safety net that makes Android reliably
-  // land on the open section even if the synchronous scroll fired too early.
-  useEffect(() => {
+  // After a category becomes active, aim the scroll synchronously after the
+  // DOM has been mutated but before the browser paints. useLayoutEffect runs
+  // post-commit / pre-paint, so the tile's expanded subtree is already in
+  // the DOM and measurable.
+  useLayoutEffect(() => {
     if (activeCategory && pendingScrollIdRef.current === activeCategory) {
-      const el = categoryTileRefs.current[activeCategory];
-      if (el) {
-        scrollToTarget(el);
-        pendingScrollIdRef.current = null;
-      }
+      scrollToCategoryTile(activeCategory);
+      pendingScrollIdRef.current = null;
     }
   }, [activeCategory]);
 
@@ -283,11 +327,11 @@ export default function Menu() {
   function chooseCategory(id: CategoryId) {
     setActiveCategory((current) => {
       const next = current === id ? null : id;
-      // When the user is opening (not closing) a category tile, scroll the
-      // opened tile into view so the subcategory chips + products are visible.
+      // When the user is opening (not closing) a category tile, queue a
+      // scroll. The actual aim happens in useLayoutEffect once React has
+      // committed the expanded subtree to the DOM.
       if (next !== null) {
         pendingScrollIdRef.current = next;
-        scrollToCategoryTile(next);
       }
       return next;
     });
@@ -503,7 +547,11 @@ export default function Menu() {
         </section>
       ) : null}
 
-      <div className="sticky z-20 -mx-4 px-4 pb-3 pt-1 bg-background/92 backdrop-blur-md border-b border-border/50 mb-4" style={{ top: "calc(64px + env(safe-area-inset-top))" }}>
+      <div
+        data-sticky-search
+        className="sticky z-20 -mx-4 px-4 pb-3 pt-1 bg-background/92 backdrop-blur-md border-b border-border/50 mb-4"
+        style={{ top: "calc(64px + env(safe-area-inset-top))" }}
+      >
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
