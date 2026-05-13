@@ -389,6 +389,15 @@ export default function Admin() {
     },
   });
 
+  const releaseDriver = useMutation({
+    mutationFn: async (id: number) => {
+      await adminRequest(pin, "POST", `/api/admin/orders/${id}/release-driver`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+    },
+  });
+
   const activeCount = products.filter((p) => p.active).length;
   const lowStock = products.filter(
     (p) => p.active && p.stockCount > 0 && p.stockCount <= p.lowStockThreshold,
@@ -691,6 +700,12 @@ export default function Admin() {
                             <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
                               #{o.id} · {o.status}
                             </span>
+                            <span className="text-[10px] uppercase tracking-wider rounded-full px-1.5 py-0.5 border border-card-border text-muted-foreground">
+                              shop:{((o as any).shopStatus || "new").replace("_"," ")}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-wider rounded-full px-1.5 py-0.5 border border-card-border text-muted-foreground">
+                              driver:{((o as any).driverStatus || "unclaimed").replace("_"," ")}
+                            </span>
                             {needsAck ? (
                               <span className="text-amber-500 font-semibold">· Needs ack</span>
                             ) : null}
@@ -877,6 +892,17 @@ export default function Admin() {
                                 Cancel
                               </Button>
                             ) : null}
+                            {(o as any).driverId ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2 text-[11px]"
+                                onClick={() => releaseDriver.mutate(o.id)}
+                                data-testid={`button-release-driver-${o.id}`}
+                              >
+                                Release driver
+                              </Button>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>
@@ -974,10 +1000,11 @@ export default function Admin() {
       {tab === "vendors" && authed ? (
         <>
           <ShopsPanel pin={pin} />
+          <DriversPanel pin={pin} />
           <VendorsPanel pin={pin} vendors={vendors} locations={locations} />
         </>
       ) : tab === "vendors" ? (
-        <Empty text="Enter the admin PIN above to manage shops, vendors, and locations." />
+        <Empty text="Enter the admin PIN above to manage shops, drivers, vendors, and locations." />
       ) : null}
     </Shell>
   );
@@ -1462,6 +1489,18 @@ type ShopRow = {
   deliveryFeeCents: number;
   imageUrl: string;
   accent: string;
+  pin?: string;
+  contactPhone?: string;
+  address?: string;
+  payoutPercent?: number;
+};
+
+type DriverRow = {
+  id: string;
+  name: string;
+  phone: string;
+  active: boolean;
+  pin: string;
 };
 
 function ShopsPanel({ pin }: { pin: string }) {
@@ -1479,18 +1518,27 @@ function ShopsPanel({ pin }: { pin: string }) {
     serviceArea: "",
     serviceFeeCents: "",
     deliveryFeeCents: "",
+    contactPhone: "",
+    address: "",
+    pin: "",
+    payoutPercent: "80",
   };
   const [sForm, setSForm] = useState(blank);
   const addShop = useMutation({
     mutationFn: async () => {
-      await adminRequest(pin, "POST", "/api/admin/shops", {
+      const payload: any = {
         id: sForm.id || undefined,
         name: sForm.name,
         blurb: sForm.blurb,
         serviceArea: sForm.serviceArea,
         serviceFeeCents: Math.max(0, Math.round(Number(sForm.serviceFeeCents) || 0)),
         deliveryFeeCents: Math.max(0, Math.round(Number(sForm.deliveryFeeCents) || 0)),
-      });
+        contactPhone: sForm.contactPhone,
+        address: sForm.address,
+        payoutPercent: Math.max(0, Math.min(100, Math.round(Number(sForm.payoutPercent) || 0))),
+      };
+      if (sForm.pin) payload.pin = sForm.pin;
+      await adminRequest(pin, "POST", "/api/admin/shops", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/shops"] });
@@ -1547,7 +1595,7 @@ function ShopsPanel({ pin }: { pin: string }) {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2 mt-2">
+              <div className="flex gap-2 mt-2 flex-wrap">
                 <Toggle
                   checked={!!s.active}
                   onClick={() =>
@@ -1565,6 +1613,7 @@ function ShopsPanel({ pin }: { pin: string }) {
                   testid={`toggle-shop-open-${s.id}`}
                 />
               </div>
+              <ShopEditFields shop={s} onSave={(patch) => toggleShop.mutate({ id: s.id, patch })} />
             </div>
           ))}
           {shops.length === 0 ? <Empty text="No shops yet." /> : null}
@@ -1607,6 +1656,30 @@ function ShopsPanel({ pin }: { pin: string }) {
               onChange={(e) => setSForm({ ...sForm, deliveryFeeCents: e.target.value })}
               data-testid="input-shop-delivery-fee"
             />
+            <Input
+              placeholder="Contact phone"
+              value={sForm.contactPhone}
+              onChange={(e) => setSForm({ ...sForm, contactPhone: e.target.value })}
+              data-testid="input-shop-contact"
+            />
+            <Input
+              placeholder="Internal address (driver pickup)"
+              value={sForm.address}
+              onChange={(e) => setSForm({ ...sForm, address: e.target.value })}
+              data-testid="input-shop-address"
+            />
+            <Input
+              placeholder="Access PIN (blank = auto)"
+              value={sForm.pin}
+              onChange={(e) => setSForm({ ...sForm, pin: e.target.value })}
+              data-testid="input-shop-pin"
+            />
+            <Input
+              placeholder="Shop payout % (0-100)"
+              value={sForm.payoutPercent}
+              onChange={(e) => setSForm({ ...sForm, payoutPercent: e.target.value })}
+              data-testid="input-shop-payout"
+            />
           </div>
           <Button
             onClick={() => addShop.mutate()}
@@ -1617,6 +1690,192 @@ function ShopsPanel({ pin }: { pin: string }) {
           </Button>
         </div>
       </Section>
+    </div>
+  );
+}
+
+function ShopEditFields({
+  shop,
+  onSave,
+}: {
+  shop: ShopRow;
+  onSave: (patch: Partial<ShopRow>) => void;
+}) {
+  const [contact, setContact] = useState(shop.contactPhone || "");
+  const [address, setAddress] = useState(shop.address || "");
+  const [pin, setPin] = useState(shop.pin || "");
+  const [payout, setPayout] = useState(String(shop.payoutPercent ?? 80));
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+      <Input
+        value={contact}
+        onChange={(e) => setContact(e.target.value)}
+        placeholder="Contact phone"
+        data-testid={`input-edit-contact-${shop.id}`}
+      />
+      <Input
+        value={address}
+        onChange={(e) => setAddress(e.target.value)}
+        placeholder="Pickup address"
+        data-testid={`input-edit-address-${shop.id}`}
+      />
+      <Input
+        value={pin}
+        onChange={(e) => setPin(e.target.value)}
+        placeholder="Access PIN"
+        data-testid={`input-edit-pin-${shop.id}`}
+      />
+      <Input
+        value={payout}
+        onChange={(e) => setPayout(e.target.value)}
+        placeholder="Payout %"
+        data-testid={`input-edit-payout-${shop.id}`}
+      />
+      <Button
+        size="sm"
+        className="col-span-2"
+        onClick={() =>
+          onSave({
+            contactPhone: contact,
+            address,
+            pin,
+            payoutPercent: Math.max(0, Math.min(100, Math.round(Number(payout) || 0))),
+          } as Partial<ShopRow>)
+        }
+        data-testid={`button-save-shop-${shop.id}`}
+      >
+        Save shop details
+      </Button>
+    </div>
+  );
+}
+
+function DriversPanel({ pin }: { pin: string }) {
+  const { data: drivers = [] } = useQuery<DriverRow[]>({
+    queryKey: ["/api/admin/drivers"],
+    queryFn: async () => {
+      const res = await adminRequest(pin, "GET", "/api/admin/drivers");
+      return res.json();
+    },
+  });
+  const [dForm, setDForm] = useState({ id: "", name: "", phone: "", pin: "" });
+  const addDriver = useMutation({
+    mutationFn: async () => {
+      const payload: any = {
+        id: dForm.id || undefined,
+        name: dForm.name,
+        phone: dForm.phone,
+      };
+      if (dForm.pin) payload.pin = dForm.pin;
+      await adminRequest(pin, "POST", "/api/admin/drivers", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/drivers"] });
+      setDForm({ id: "", name: "", phone: "", pin: "" });
+    },
+  });
+  const updateDriver = useMutation({
+    mutationFn: async (args: { id: string; patch: Partial<DriverRow> }) => {
+      await adminRequest(pin, "PATCH", `/api/admin/drivers/${args.id}`, args.patch);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/drivers"] });
+    },
+  });
+  return (
+    <Section title="Drivers">
+      <p className="text-xs text-muted-foreground mb-2">
+        Drivers use the /#/driver portal with their access code to claim and
+        deliver orders. Reset a PIN here if a phone is lost or compromised.
+      </p>
+      <div className="space-y-2 mb-3">
+        {drivers.map((d) => (
+          <DriverEditRow key={d.id} driver={d} onSave={(patch) => updateDriver.mutate({ id: d.id, patch })} />
+        ))}
+        {drivers.length === 0 ? <Empty text="No drivers yet." /> : null}
+      </div>
+      <div className="bg-card border border-card-border rounded-2xl p-4 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            placeholder="driver-id (optional)"
+            value={dForm.id}
+            onChange={(e) => setDForm({ ...dForm, id: e.target.value })}
+            data-testid="input-driver-id"
+          />
+          <Input
+            placeholder="Driver name"
+            value={dForm.name}
+            onChange={(e) => setDForm({ ...dForm, name: e.target.value })}
+            data-testid="input-driver-name"
+          />
+          <Input
+            placeholder="Phone"
+            value={dForm.phone}
+            onChange={(e) => setDForm({ ...dForm, phone: e.target.value })}
+            data-testid="input-driver-phone"
+          />
+          <Input
+            placeholder="Access PIN (blank = auto)"
+            value={dForm.pin}
+            onChange={(e) => setDForm({ ...dForm, pin: e.target.value })}
+            data-testid="input-driver-pin"
+          />
+        </div>
+        <Button onClick={() => addDriver.mutate()} disabled={addDriver.isPending || !dForm.name} data-testid="button-add-driver">
+          <Truck className="size-4 mr-2" /> Add driver
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
+function DriverEditRow({ driver, onSave }: { driver: DriverRow; onSave: (patch: Partial<DriverRow>) => void }) {
+  const [phone, setPhone] = useState(driver.phone || "");
+  const [pinValue, setPinValue] = useState(driver.pin || "");
+  const [active, setActive] = useState(!!driver.active);
+  return (
+    <div
+      key={driver.id}
+      className="bg-card border border-card-border rounded-2xl p-3 text-xs space-y-2"
+      data-testid={`row-driver-${driver.id}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="font-semibold text-sm">{driver.name}</div>
+          <div className="font-mono text-[10px] text-muted-foreground">{driver.id}</div>
+        </div>
+        <Toggle
+          checked={active}
+          onClick={() => {
+            const next = !active;
+            setActive(next);
+            onSave({ active: next });
+          }}
+          label="Active"
+          testid={`toggle-driver-active-${driver.id}`}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone"
+          data-testid={`input-edit-driver-phone-${driver.id}`}
+        />
+        <Input
+          value={pinValue}
+          onChange={(e) => setPinValue(e.target.value)}
+          placeholder="PIN"
+          data-testid={`input-edit-driver-pin-${driver.id}`}
+        />
+      </div>
+      <Button
+        size="sm"
+        onClick={() => onSave({ phone, pin: pinValue })}
+        data-testid={`button-save-driver-${driver.id}`}
+      >
+        Save driver
+      </Button>
     </div>
   );
 }

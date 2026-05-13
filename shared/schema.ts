@@ -55,6 +55,18 @@ export const orders = sqliteTable("orders", {
   locationId: text("location_id").notNull().default("default"),
   // Customer-facing local shop association.
   shopId: text("shop_id").notNull().default("default"),
+  // Shop-facing fulfillment status. Independent of the customer/admin `status`
+  // and driver_status so the shop dashboard can move an order through prep
+  // without colliding with payment/admin lifecycle. Values:
+  // new | received | preparing | ready_for_pickup
+  shopStatus: text("shop_status").notNull().default("new"),
+  // Driver-facing claim/fulfillment status. unclaimed | accepted | en_route_pickup
+  // | picked_up | delivered.
+  driverStatus: text("driver_status").notNull().default("unclaimed"),
+  // Which driver currently owns the order (foreign key by id). Null until a
+  // driver successfully claims it. First-claim wins via SQL race protection.
+  driverId: text("driver_id"),
+  claimedAt: integer("claimed_at"),
 });
 
 export const insertOrderSchema = createInsertSchema(orders).omit({
@@ -70,6 +82,10 @@ export const insertOrderSchema = createInsertSchema(orders).omit({
   acknowledgedAt: true,
   flaggedAt: true,
   feeCents: true,
+  shopStatus: true,
+  driverStatus: true,
+  driverId: true,
+  claimedAt: true,
 });
 
 export const PAYMENT_STATUSES = [
@@ -282,5 +298,29 @@ export const shops = sqliteTable("shops", {
   imageUrl: text("image_url").notNull().default(""),
   accent: text("accent").notNull().default("#ff7a1a"),
   createdAt: integer("created_at").notNull(),
+  // Shop-facing portal access. Plaintext PIN for MVP; future role-auth will
+  // replace this. Contact/address are separate from the customer-facing
+  // serviceArea so the shop record can hold real internal location info.
+  pin: text("pin").notNull().default(""),
+  contactPhone: text("contact_phone").notNull().default(""),
+  address: text("address").notNull().default(""),
+  // Per-order shop payout share applied when computing the shop-facing total.
+  // Cents-share is paid lump per item via JSON or fallback to percentage.
+  payoutPercent: integer("payout_percent").notNull().default(80),
+  updatedAt: integer("updated_at"),
 });
 export type Shop = typeof shops.$inferSelect;
+
+// Driver records. Plaintext PIN for MVP — same caveat as the shop PIN. The
+// portal sets a token in React state per session, not localStorage, so the
+// PIN never persists across reloads.
+export const drivers = sqliteTable("drivers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull().default(""),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  pin: text("pin").notNull().default(""),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at"),
+});
+export type Driver = typeof drivers.$inferSelect;

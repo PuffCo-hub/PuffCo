@@ -55,6 +55,105 @@ function requireAdmin(req: any, res: any) {
   return true;
 }
 
+// Resolve a shop from the X-Shop-Pin header. Returns the shop if valid &
+// active, otherwise sends a 401 and returns null. Pattern mirrors
+// requireAdmin so future role-auth can swap the header lookup for a real
+// session without touching individual route handlers.
+async function requireShop(req: any, res: any) {
+  const pin = String(req.headers["x-shop-pin"] || "").trim();
+  if (!pin) {
+    res.status(401).json({ error: "shop access code required" });
+    return null;
+  }
+  const shop = await storage.getShopByPin(pin);
+  if (!shop || !shop.active) {
+    res.status(401).json({ error: "invalid shop access code" });
+    return null;
+  }
+  return shop;
+}
+
+async function requireDriver(req: any, res: any) {
+  const pin = String(req.headers["x-driver-pin"] || "").trim();
+  if (!pin) {
+    res.status(401).json({ error: "driver access code required" });
+    return null;
+  }
+  const driver = await storage.getDriverByPin(pin);
+  if (!driver || !driver.active) {
+    res.status(401).json({ error: "invalid driver access code" });
+    return null;
+  }
+  return driver;
+}
+
+// Strip customer/platform/financial fields. The shop sees only what it needs
+// to prep the order and its own payout. PuffGo markup, customer total, fee
+// breakdown, and driver economics are all omitted.
+function shopOrderView(o: any, shop: any) {
+  let items: any[] = [];
+  try { items = JSON.parse(o.items || "[]"); } catch { items = []; }
+  // Shop payout = subtotal (pre-platform-markup) * payoutPercent. Subtotal is
+  // already the wholesale-equivalent figure the shop is owed; we apply the
+  // configured percent as a safety net so admins can tune payouts.
+  const payoutPercent = Math.max(0, Math.min(100, Number(shop?.payoutPercent ?? 80)));
+  const payoutCents = Math.round((o.subtotal ?? 0) * (payoutPercent / 100));
+  return {
+    id: o.id,
+    orderCode: o.orderCode,
+    createdAt: o.createdAt,
+    items: items.map((it) => ({
+      id: it.id,
+      name: it.name,
+      brand: it.brand,
+      qty: it.qty,
+    })),
+    notes: o.notes || "",
+    shopStatus: o.shopStatus || "new",
+    driverStatus: o.driverStatus || "unclaimed",
+    paymentStatus: o.paymentStatus,
+    shopPayoutCents: payoutCents,
+  };
+}
+
+// Strip platform/customer-economics fields for the driver view. Driver sees
+// pickup shop, drop-off address, items needed to verify handoff, and only
+// driver-relevant status fields.
+function driverOrderView(o: any, shop: any) {
+  let items: any[] = [];
+  try { items = JSON.parse(o.items || "[]"); } catch { items = []; }
+  return {
+    id: o.id,
+    orderCode: o.orderCode,
+    createdAt: o.createdAt,
+    items: items.map((it) => ({
+      id: it.id,
+      name: it.name,
+      brand: it.brand,
+      qty: it.qty,
+    })),
+    pickup: {
+      shopName: shop?.name || "Pickup location",
+      address: shop?.address || "",
+      phone: shop?.contactPhone || "",
+    },
+    dropoff: {
+      firstName: o.customerFirstName,
+      lastInitial: o.customerLastInitial,
+      phone: o.customerPhone,
+      street: o.street,
+      unit: o.unit,
+      city: o.city,
+      state: o.state,
+      zip: o.zip,
+    },
+    notes: o.notes || "",
+    shopStatus: o.shopStatus || "new",
+    driverStatus: o.driverStatus || "unclaimed",
+    paymentStatus: o.paymentStatus,
+  };
+}
+
 // Public-safe view of a product. Strips internal vendor/location and never
 // exposes any supplier-cost data (the schema doesn't carry it, but this keeps
 // the surface area explicit). Also computes a derived `available` boolean.
@@ -482,13 +581,20 @@ export async function registerRoutes(
       deliveryFeeCents: z.number().int().min(0).optional(),
       imageUrl: z.string().max(2048).optional(),
       accent: z.string().max(32).optional(),
+      pin: z.string().min(3).max(64).optional(),
+      contactPhone: z.string().max(64).optional(),
+      address: z.string().max(300).optional(),
+      payoutPercent: z.number().int().min(0).max(100).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const id = parsed.data.id || slugify(parsed.data.name) || `shop-${Date.now().toString(36)}`;
     const exists = await storage.getShop(id);
     if (exists) return res.status(409).json({ error: "shop id already exists" });
-    const s = await storage.createShop({ ...parsed.data, id });
+    const pin = parsed.data.pin && parsed.data.pin.length > 0
+      ? parsed.data.pin
+      : `shop-${Math.random().toString(36).slice(2, 6)}`;
+    const s = await storage.createShop({ ...parsed.data, id, pin });
     await storage.appendAudit("shop.created", id, { name: s.name });
     res.json(s);
   });
@@ -505,6 +611,10 @@ export async function registerRoutes(
       deliveryFeeCents: z.number().int().min(0).optional(),
       imageUrl: z.string().max(2048).optional(),
       accent: z.string().max(32).optional(),
+      pin: z.string().min(3).max(64).optional(),
+      contactPhone: z.string().max(64).optional(),
+      address: z.string().max(300).optional(),
+      payoutPercent: z.number().int().min(0).max(100).optional(),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -782,6 +892,195 @@ export async function registerRoutes(
     await storage.appendAudit("vendor.created", v.id, { name: v.name });
     res.json(v);
   });
+  // ----------- Shop portal (role-scoped) -----------
+  app.post("/api/shop/login", async (req, res) => {
+    const pin = String(req.body?.pin || "").trim();
+    const shop = await storage.getShopByPin(pin);
+    if (!shop || !shop.active) {
+      return res.status(401).json({ error: "invalid access code" });
+    }
+    res.json({
+      shop: {
+        id: shop.id,
+        name: shop.name,
+        address: shop.address,
+        contactPhone: shop.contactPhone,
+      },
+    });
+  });
+
+  app.get("/api/shop/orders", async (req, res) => {
+    const shop = await requireShop(req, res);
+    if (!shop) return;
+    const all = await storage.listOrdersForShop(shop.id);
+    // Hide canceled/refunded clutter. Keep pending payment in view so the shop
+    // can plan ahead but it'll be a no-op for prep buttons until paid.
+    res.json(all.filter((o) => o.paymentStatus !== "canceled").map((o) => shopOrderView(o, shop)));
+  });
+
+  app.patch("/api/shop/orders/:id/status", async (req, res) => {
+    const shop = await requireShop(req, res);
+    if (!shop) return;
+    const id = Number(req.params.id);
+    const next = String(req.body?.shopStatus || "");
+    const allowed = ["new", "received", "preparing", "ready_for_pickup"];
+    if (!allowed.includes(next)) {
+      return res.status(400).json({ error: "bad shop status" });
+    }
+    const before = await storage.getOrder(id);
+    if (!before || before.shopId !== shop.id) {
+      return res.status(404).json({ error: "not found" });
+    }
+    const updated = await storage.updateShopStatus(id, next, shop.id);
+    if (!updated) return res.status(404).json({ error: "not found" });
+    await storage.appendAudit("shop.status_changed", String(id), {
+      shopId: shop.id,
+      from: before.shopStatus,
+      to: next,
+    });
+    res.json(shopOrderView(updated, shop));
+  });
+
+  // ----------- Driver portal (role-scoped) -----------
+  app.post("/api/driver/login", async (req, res) => {
+    const pin = String(req.body?.pin || "").trim();
+    const driver = await storage.getDriverByPin(pin);
+    if (!driver || !driver.active) {
+      return res.status(401).json({ error: "invalid access code" });
+    }
+    res.json({
+      driver: {
+        id: driver.id,
+        name: driver.name,
+        phone: driver.phone,
+      },
+    });
+  });
+
+  app.get("/api/driver/orders/available", async (req, res) => {
+    const driver = await requireDriver(req, res);
+    if (!driver) return;
+    const rows = await storage.listAvailableForDrivers();
+    const out: any[] = [];
+    for (const o of rows) {
+      const shop = await storage.getShop(o.shopId || "default");
+      out.push(driverOrderView(o, shop));
+    }
+    res.json(out);
+  });
+
+  app.get("/api/driver/orders/active", async (req, res) => {
+    const driver = await requireDriver(req, res);
+    if (!driver) return;
+    const rows = await storage.listOrdersForDriver(driver.id);
+    const out: any[] = [];
+    for (const o of rows) {
+      if (o.driverStatus === "delivered" && Date.now() - (o.claimedAt || 0) > 24 * 3600 * 1000) {
+        continue; // hide ancient deliveries
+      }
+      const shop = await storage.getShop(o.shopId || "default");
+      out.push(driverOrderView(o, shop));
+    }
+    res.json(out);
+  });
+
+  app.post("/api/driver/orders/:id/claim", async (req, res) => {
+    const driver = await requireDriver(req, res);
+    if (!driver) return;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "bad id" });
+    const claimed = await storage.claimOrderForDriver(id, driver.id);
+    if (!claimed) {
+      return res.status(409).json({ error: "already claimed or unavailable" });
+    }
+    await storage.appendAudit("order.claimed", String(id), { driverId: driver.id });
+    const shop = await storage.getShop(claimed.shopId || "default");
+    res.json(driverOrderView(claimed, shop));
+  });
+
+  app.patch("/api/driver/orders/:id/status", async (req, res) => {
+    const driver = await requireDriver(req, res);
+    if (!driver) return;
+    const id = Number(req.params.id);
+    const next = String(req.body?.driverStatus || "");
+    const allowed = ["accepted", "en_route_pickup", "picked_up", "delivered"];
+    if (!allowed.includes(next)) {
+      return res.status(400).json({ error: "bad driver status" });
+    }
+    const before = await storage.getOrder(id);
+    if (!before || before.driverId !== driver.id) {
+      return res.status(404).json({ error: "not found" });
+    }
+    const updated = await storage.updateDriverStatus(id, next, driver.id);
+    if (!updated) return res.status(404).json({ error: "not found" });
+    await storage.appendAudit("driver.status_changed", String(id), {
+      driverId: driver.id,
+      from: before.driverStatus,
+      to: next,
+    });
+    const shop = await storage.getShop(updated.shopId || "default");
+    res.json(driverOrderView(updated, shop));
+  });
+
+  // ----------- Admin: drivers -----------
+  app.get("/api/admin/drivers", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.json(await storage.listDrivers(true));
+  });
+  app.post("/api/admin/drivers", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const schema = z.object({
+      id: z.string().min(1).optional(),
+      name: z.string().min(1),
+      phone: z.string().max(64).optional(),
+      pin: z.string().min(3).max(64).optional(),
+      active: z.boolean().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const id = parsed.data.id || slugify(parsed.data.name) || `driver-${Date.now().toString(36)}`;
+    const exists = await storage.getDriver(id);
+    if (exists) return res.status(409).json({ error: "driver id already exists" });
+    const d = await storage.createDriver({
+      id,
+      name: parsed.data.name,
+      phone: parsed.data.phone ?? "",
+      pin: parsed.data.pin && parsed.data.pin.length > 0 ? parsed.data.pin : `drive-${Math.random().toString(36).slice(2, 6)}`,
+      active: parsed.data.active ?? true,
+    });
+    await storage.appendAudit("driver.created", d.id, { name: d.name });
+    res.json(d);
+  });
+  app.patch("/api/admin/drivers/:id", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const schema = z.object({
+      name: z.string().min(1).optional(),
+      phone: z.string().max(64).optional(),
+      pin: z.string().min(3).max(64).optional(),
+      active: z.boolean().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const updated = await storage.updateDriver(req.params.id, parsed.data as any);
+    if (!updated) return res.status(404).json({ error: "not found" });
+    await storage.appendAudit("driver.updated", req.params.id, { keys: Object.keys(parsed.data) });
+    res.json(updated);
+  });
+
+  // Admin: release a stuck driver claim. Frees the order so any driver can
+  // pick it up again. Use sparingly — this is the manual override.
+  app.post("/api/admin/orders/:id/release-driver", async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const id = Number(req.params.id);
+    const before = await storage.getOrder(id);
+    if (!before) return res.status(404).json({ error: "not found" });
+    const updated = await storage.releaseOrderClaim(id);
+    await storage.appendAudit("order.driver_released", String(id), {
+      previousDriverId: before.driverId,
+    });
+    res.json(updated);
+  });
+
   app.get("/api/admin/locations", async (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json(await storage.listLocations());

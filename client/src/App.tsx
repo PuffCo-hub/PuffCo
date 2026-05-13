@@ -16,6 +16,7 @@ import Tip from "@/pages/Tip";
 import Pay from "@/pages/Pay";
 import Confirm from "@/pages/Confirm";
 import Driver from "@/pages/Driver";
+import Shop from "@/pages/Shop";
 import Admin from "@/pages/Admin";
 import { useEffect } from "react";
 
@@ -71,6 +72,7 @@ function AppRouter() {
         </Gate>
       </Route>
       <Route path="/driver" component={Driver} />
+      <Route path="/shop" component={Shop} />
       <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>

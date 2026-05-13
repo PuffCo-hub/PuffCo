@@ -9,6 +9,7 @@ import {
   vendors,
   locations,
   shops,
+  drivers,
 } from "@shared/schema";
 import type {
   Order,
@@ -21,6 +22,7 @@ import type {
   Vendor,
   Location,
   Shop,
+  Driver,
   PricingSettings,
   OrderSettings,
   NotificationSettings,
@@ -134,7 +136,21 @@ sqlite.exec(`
     delivery_fee_cents INTEGER NOT NULL DEFAULT 0,
     image_url TEXT NOT NULL DEFAULT '',
     accent TEXT NOT NULL DEFAULT '#ff7a1a',
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    pin TEXT NOT NULL DEFAULT '',
+    contact_phone TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    payout_percent INTEGER NOT NULL DEFAULT 80,
+    updated_at INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS drivers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    pin TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER
   );
 `);
 
@@ -176,6 +192,16 @@ function tryAlter(sql: string) {
   "ALTER TABLE orders ADD COLUMN customer_first_name TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE orders ADD COLUMN customer_last_initial TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAULT ''",
+  // Role-system migrations (PuffGo operational roles).
+  "ALTER TABLE orders ADD COLUMN shop_status TEXT NOT NULL DEFAULT 'new'",
+  "ALTER TABLE orders ADD COLUMN driver_status TEXT NOT NULL DEFAULT 'unclaimed'",
+  "ALTER TABLE orders ADD COLUMN driver_id TEXT",
+  "ALTER TABLE orders ADD COLUMN claimed_at INTEGER",
+  "ALTER TABLE shops ADD COLUMN pin TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE shops ADD COLUMN contact_phone TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE shops ADD COLUMN address TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE shops ADD COLUMN payout_percent INTEGER NOT NULL DEFAULT 80",
+  "ALTER TABLE shops ADD COLUMN updated_at INTEGER",
 ].forEach(tryAlter);
 
 // Backfill orderCode for any pre-existing rows (best effort — keeps customer
@@ -295,6 +321,47 @@ function seedVendorAndLocationIfEmpty() {
         address: "",
         active: true,
         createdAt: now,
+      })
+      .run();
+  }
+}
+
+function randomCode(len = 4) {
+  // Simple admin-readable code: digits only, length 4. Re-rolled per insert.
+  let out = "";
+  for (let i = 0; i < len; i += 1) {
+    out += Math.floor(Math.random() * 10);
+  }
+  return out;
+}
+
+function backfillShopPins() {
+  try {
+    const rows = sqlite
+      .prepare("SELECT id FROM shops WHERE pin = '' OR pin IS NULL")
+      .all() as Array<{ id: string }>;
+    const update = sqlite.prepare("UPDATE shops SET pin = ? WHERE id = ?");
+    for (const r of rows) {
+      update.run(`shop-${randomCode(4)}`, r.id);
+    }
+  } catch (err) {
+    console.warn("[migrate] backfillShopPins:", (err as any)?.message);
+  }
+}
+
+function seedDriversIfEmpty() {
+  const now = Date.now();
+  const d = db.select({ value: count() }).from(drivers).get();
+  if ((d?.value ?? 0) === 0) {
+    db.insert(drivers)
+      .values({
+        id: "driver-default",
+        name: "Demo Driver",
+        phone: "",
+        active: true,
+        pin: `drive-${randomCode(4)}`,
+        createdAt: now,
+        updatedAt: now,
       })
       .run();
   }
@@ -539,6 +606,8 @@ function backfillStock() {
 seedProductsIfEmpty();
 seedVendorAndLocationIfEmpty();
 seedShopsIfEmpty();
+backfillShopPins();
+seedDriversIfEmpty();
 seedSettingsIfMissing();
 backfillStock();
 
@@ -583,8 +652,25 @@ export interface IStorage {
 
   listShops(includeInactive?: boolean): Promise<Shop[]>;
   getShop(id: string): Promise<Shop | undefined>;
+  getShopByPin(pin: string): Promise<Shop | undefined>;
   createShop(s: Partial<Shop> & { id: string; name: string }): Promise<Shop>;
   updateShop(id: string, patch: Partial<Shop>): Promise<Shop | undefined>;
+
+  listDrivers(includeInactive?: boolean): Promise<Driver[]>;
+  getDriver(id: string): Promise<Driver | undefined>;
+  getDriverByPin(pin: string): Promise<Driver | undefined>;
+  createDriver(d: Partial<Driver> & { id: string; name: string }): Promise<Driver>;
+  updateDriver(id: string, patch: Partial<Driver>): Promise<Driver | undefined>;
+
+  listOrdersForShop(shopId: string): Promise<Order[]>;
+  updateShopStatus(id: number, shopStatus: string, shopId: string): Promise<Order | undefined>;
+  listAvailableForDrivers(): Promise<Order[]>;
+  listOrdersForDriver(driverId: string): Promise<Order[]>;
+  // First-claim wins. Returns the order if successfully assigned, undefined if
+  // it was already claimed by someone else or doesn't qualify.
+  claimOrderForDriver(id: number, driverId: string): Promise<Order | undefined>;
+  updateDriverStatus(id: number, driverStatus: string, driverId: string): Promise<Order | undefined>;
+  releaseOrderClaim(id: number): Promise<Order | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -911,8 +997,154 @@ export class DatabaseStorage implements IStorage {
   async updateShop(id: string, patch: Partial<Shop>): Promise<Shop | undefined> {
     return db
       .update(shops)
-      .set(patch as any)
+      .set({ ...patch, updatedAt: Date.now() } as any)
       .where(eq(shops.id, id))
+      .returning()
+      .get();
+  }
+  async getShopByPin(pin: string): Promise<Shop | undefined> {
+    const trimmed = (pin || "").trim();
+    if (!trimmed) return undefined;
+    return db.select().from(shops).where(eq(shops.pin, trimmed)).get();
+  }
+
+  // Drivers ----------------------------------------------------------------
+  async listDrivers(includeInactive = false): Promise<Driver[]> {
+    if (includeInactive) {
+      return db.select().from(drivers).orderBy(desc(drivers.createdAt)).all();
+    }
+    return db
+      .select()
+      .from(drivers)
+      .where(eq(drivers.active, true))
+      .orderBy(desc(drivers.createdAt))
+      .all();
+  }
+  async getDriver(id: string): Promise<Driver | undefined> {
+    return db.select().from(drivers).where(eq(drivers.id, id)).get();
+  }
+  async getDriverByPin(pin: string): Promise<Driver | undefined> {
+    const trimmed = (pin || "").trim();
+    if (!trimmed) return undefined;
+    return db.select().from(drivers).where(eq(drivers.pin, trimmed)).get();
+  }
+  async createDriver(input: Partial<Driver> & { id: string; name: string }): Promise<Driver> {
+    const now = Date.now();
+    return db
+      .insert(drivers)
+      .values({
+        id: input.id,
+        name: input.name,
+        phone: input.phone ?? "",
+        active: input.active ?? true,
+        pin: input.pin ?? "",
+        createdAt: now,
+        updatedAt: now,
+      } as any)
+      .returning()
+      .get();
+  }
+  async updateDriver(id: string, patch: Partial<Driver>): Promise<Driver | undefined> {
+    return db
+      .update(drivers)
+      .set({ ...patch, updatedAt: Date.now() } as any)
+      .where(eq(drivers.id, id))
+      .returning()
+      .get();
+  }
+
+  // Role-scoped order operations -------------------------------------------
+  async listOrdersForShop(shopId: string): Promise<Order[]> {
+    return db
+      .select()
+      .from(orders)
+      .where(eq(orders.shopId, shopId))
+      .orderBy(desc(orders.createdAt))
+      .all();
+  }
+  async updateShopStatus(
+    id: number,
+    shopStatus: string,
+    shopId: string,
+  ): Promise<Order | undefined> {
+    // Scope the update to the calling shop so a leaked PIN can't move another
+    // shop's order. Drizzle update returns the row only if a row matched.
+    return db
+      .update(orders)
+      .set({ shopStatus })
+      .where(and(eq(orders.id, id), eq(orders.shopId, shopId)))
+      .returning()
+      .get();
+  }
+  async listAvailableForDrivers(): Promise<Order[]> {
+    // Drivers see orders that have been paid AND prepared (or at minimum
+    // confirmed by admin) and are not yet claimed. Filter in JS so we can
+    // include orders with shop_status=ready_for_pickup OR confirmed admin
+    // status (paid pending prep).
+    const rows = db
+      .select()
+      .from(orders)
+      .orderBy(desc(orders.createdAt))
+      .all();
+    return rows.filter((o) => {
+      if (o.driverId) return false;
+      if (o.driverStatus !== "unclaimed") return false;
+      if (["canceled", "delivered"].includes(o.status)) return false;
+      if (o.paymentStatus !== "paid") return false;
+      return true;
+    });
+  }
+  async listOrdersForDriver(driverId: string): Promise<Order[]> {
+    return db
+      .select()
+      .from(orders)
+      .where(eq(orders.driverId, driverId))
+      .orderBy(desc(orders.createdAt))
+      .all();
+  }
+  async claimOrderForDriver(id: number, driverId: string): Promise<Order | undefined> {
+    // Race-safe: UPDATE...WHERE driver_id IS NULL guarantees only one driver
+    // can win. The returning() call yields the row only if the WHERE matched,
+    // which is exactly the "first claim wins" semantics we need.
+    const result = sqlite
+      .prepare(
+        `UPDATE orders SET driver_id = ?, driver_status = 'accepted', claimed_at = ?
+         WHERE id = ? AND driver_id IS NULL AND payment_status = 'paid'
+         AND status NOT IN ('canceled', 'delivered')`
+      )
+      .run(driverId, Date.now(), id);
+    if (result.changes === 0) return undefined;
+    return this.getOrder(id);
+  }
+  async updateDriverStatus(
+    id: number,
+    driverStatus: string,
+    driverId: string,
+  ): Promise<Order | undefined> {
+    // Scope by driverId so a leaked PIN cannot steer another driver's order.
+    const updated = db
+      .update(orders)
+      .set({ driverStatus })
+      .where(and(eq(orders.id, id), eq(orders.driverId, driverId)))
+      .returning()
+      .get();
+    // When the driver marks delivered, mirror it into the customer/admin
+    // status so the admin dashboard counts the delivery.
+    if (updated && driverStatus === "delivered" && updated.status !== "delivered") {
+      return db
+        .update(orders)
+        .set({ status: "delivered" })
+        .where(eq(orders.id, id))
+        .returning()
+        .get();
+    }
+    return updated;
+  }
+  async releaseOrderClaim(id: number): Promise<Order | undefined> {
+    return db
+      .update(orders)
+      .set({ driverId: null, driverStatus: "unclaimed", claimedAt: null } as any)
+      .where(eq(orders.id, id))
       .returning()
       .get();
   }
