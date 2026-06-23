@@ -59,7 +59,7 @@ export default function AgeGate() {
 
         <div className="mt-4 mb-1 flex items-center gap-2 px-3 py-1 rounded-full border border-primary/30 bg-primary/10 text-[10px] uppercase tracking-[0.22em] text-primary font-semibold">
           <Sparkles className="size-3" />
-          Pasco County only
+          Now serving Pasco & Hernando County
         </div>
 
         <div className="mt-6 mb-3">
@@ -82,13 +82,13 @@ export default function AgeGate() {
 
         <div className="mt-4 max-w-xs rounded-2xl border border-amber-400/35 bg-amber-400/12 px-4 py-3 text-left text-xs leading-relaxed text-amber-100/90">
           <span className="font-semibold text-amber-200">Delivery area:</span>{" "}
-          PuffGo is serving Pasco County only right now. Outside Pasco may be accepted only
-          if the tip makes the longer drive worth it.
+          PuffGo is available in Pasco and Hernando County right now. Outside these areas may
+          be accepted only if the tip makes the longer drive worth it.
         </div>
 
         {/* Trust strip */}
         <div className="mt-6 grid grid-cols-3 gap-2 w-full max-w-xs">
-          <Trust icon={<Truck className="size-4" />} label="Pasco only" />
+          <Trust icon={<Truck className="size-4" />} label="Pasco & Hernando" />
           <Trust icon={<Clock className="size-4" />} label="Live tracking" />
           <Trust icon={<ShieldCheck className="size-4" />} label="21+ ID at door" />
         </div>
@@ -127,7 +127,7 @@ export default function AgeGate() {
       <p className="text-[11px] leading-relaxed text-muted-foreground/80 max-w-xs mx-auto mt-8">
         PuffGo does not store ID images, dates of birth, payment data, or persistent
         customer profiles. Availability and delivery are subject to local rules and the
-        current Pasco County service area.
+        current Pasco and Hernando County service area.
       </p>
     </div>
   );
