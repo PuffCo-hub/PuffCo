@@ -100,11 +100,8 @@ function countDigits(value: string): number {
   return (value.match(/\d/g) || []).length;
 }
 
-function defaultWaitMinutes(): number {
-  const raw = Number(process.env.AVERAGE_WAIT_MINUTES);
-  if (Number.isFinite(raw) && raw > 0) return Math.round(raw);
-  return 45;
-}
+const CUSTOMER_CONFIRMATION_SMS =
+  "Thank you for shopping with PuffGo Delivery. We will message you with updates once your payment is received, once a driver picks up your order, and when your order is close to drop off.\n\nThanks a million,\n-PuffGo";
 
 function slugify(input: string) {
   return input
@@ -521,19 +518,26 @@ export async function registerRoutes(
     }
 
     // Customer confirmation.
-    const wait = defaultWaitMinutes();
-    const customerBody =
-      `Thanks ${order.customerFirstName} — PuffGo received your order ${orderCode}. ` +
-      `Typical wait is about ${wait} minutes. ` +
-      `We'll confirm once payment is matched. Reply if anything needs to change.`;
-    const confirmation = await sendSms(order.customerPhone, customerBody);
+    const customerPhone = String(order.customerPhone ?? "").trim();
+    if (!customerPhone) {
+      await storage.appendAudit("sms.skipped", String(order.id), {
+        reason: "missing customer phone",
+      });
+      return;
+    }
+    const confirmation = await sendSms(customerPhone, CUSTOMER_CONFIRMATION_SMS);
+    if (!confirmation.ok) {
+      console.warn(
+        `[sms] customer confirmation not sent for order ${order.id}: ` +
+          (confirmation.error || confirmation.reason || "unknown"),
+      );
+    }
     await storage.appendAudit("sms.customer_confirmation", String(order.id), {
-      to: order.customerPhone,
+      to: customerPhone,
       ok: confirmation.ok,
       skipped: confirmation.skipped ?? false,
       error: confirmation.error,
       reason: confirmation.reason,
-      waitMinutes: wait,
     });
   }
 
